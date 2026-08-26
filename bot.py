@@ -1,3 +1,14 @@
+import http.server
+import socketserver
+import threading
+
+def run_web_server():
+    handler = http.server.SimpleHTTPRequestHandler
+    with socketserver.TCPServer(("", 10000), handler) as httpd:
+        httpd.serve_forever()
+
+threading.Thread(target=run_web_server, daemon=True).start()
+
 import os
 import time
 import json
@@ -10,7 +21,7 @@ import yfinance as yf
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-HISSELER = ["THYAO", "GARAN", "EREGL", "ASELS", "TUPRS"]
+HISSELER = ["THYAO", "GARAN.IS", "EREGL.IS", "ASELS.IS", "TUPRS.IS", "AEFES.IS", "AKBNK.IS", "ENKAI.IS", "FROTO.IS", "SISE.IS", "TCELL.IS", "VAKBN.IS", "YKBNK.IS", "TTKOM.IS"]
 PORTFOY_DOSYASI = "portfoy.json"
 
 STOP_LOSS_ORAN = 0.02   # %2 Zarar Kes
