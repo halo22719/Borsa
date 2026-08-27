@@ -21,7 +21,7 @@ import yfinance as yf
 TOKEN = os.getenv("TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
-HISSELER = ["THYAO", "GARAN.IS", "EREGL.IS", "ASELS.IS", "TUPRS.IS", "AEFES.IS", "AKBNK.IS", "ENKAI.IS", "FROTO.IS", "SISE.IS", "TCELL.IS", "VAKBN.IS", "YKBNK.IS", "TTKOM.IS"]
+HISSELER = ["THYAO", "GARAN", "EREGL", "ASELS", "TUPRS", "AEFES", "AKBNKS", "ENKAI", "FROTO", "SISE", "TCELL", "VAKBN", "YKBNK", "TTKOM"]
 PORTFOY_DOSYASI = "portfoy.json"
 
 STOP_LOSS_ORAN = 0.02   # %2 Zarar Kes
