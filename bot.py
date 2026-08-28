@@ -28,13 +28,13 @@ TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 TELEGRAM_CHAT_ID = "1131754179"
 PORTFOLIO_FILE = "portfolio.json"
 
-# BIST 30 Hisselerinin Tamamı (30 Hisse)
+# Takip Edilen Hisseler Listesi
 SYMBOLS = [
     "AKBNK.IS", "ALARK.IS", "ASELS.IS", "ASTOR.IS", "BIMAS.IS",
     "BRSAN.IS", "DOAS.IS",  "EKGYO.IS", "ENKAI.IS", "EREGL.IS",
     "FROTO.IS", "GARAN.IS", "HEKTS.IS", "ISCTR.IS", "KCHOL.IS",
-    "KONTR.IS", "KRDMD.IS", "ODAS.IS",  "OYAKC.IS", "REEDR.IS",
-    "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SISE.IS",  "TCELL.IS",
+    "KONTR.IS", "KRDMD.IS", "ODAS.IS",  "OYAKC.IS", "PETKM.IS",
+    "PGSUS.IS", "REEDR.IS", "SAHOL.IS", "SISE.IS",  "TCELL.IS",
     "THYAO.IS", "TOASO.IS", "TUPRS.IS", "ULKER.IS", "YKBNK.IS"
 ]
 
@@ -147,6 +147,7 @@ def main():
                 portfolio = load_portfolio()
                 for symbol in SYMBOLS:
                     check_signals(symbol, portfolio)
+                    time.sleep(1) # Yahoo isteğine aşırı yüklenmeyi önlemek için 1 sn gecikme
                 # Seans sırasında her 5 dakikada bir kontrol eder
                 time.sleep(300)
             else:
