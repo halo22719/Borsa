@@ -23,8 +23,9 @@ threading.Thread(target=run_web_server, daemon=True).start()
 # ==================== GENEL AYARLAR VE LOGGING ====================
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+# Telegram Entegrasyon Bilgileri
+TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
+TELEGRAM_CHAT_ID = "1131754179"
 PORTFOLIO_FILE = "portfolio.json"
 
 # BIST 30 Hisselerinin Tamamı (30 Hisse)
@@ -78,7 +79,7 @@ def check_signals(symbol, portfolio):
         if isinstance(df.columns, pd.MultiIndex):
             df = df.xs(symbol, level=1, axis=1)
 
-        # İndikatörler
+        # İndikatörler (SMA 5 ve SMA 22)
         df["SMA5"] = df["Close"].rolling(window=5).mean()
         df["SMA22"] = df["Close"].rolling(window=22).mean()
 
@@ -138,7 +139,7 @@ def main():
         try:
             now = datetime.datetime.now(tz)
             
-            # Pazartesi(0) - Cuma(4) ve Seans Saatleri (10:00 - 18:10)
+            # Pazartesi(0) - Cuma(4) ve Seans Saatleri (10:00 - 18:10 TSİ)
             is_weekday = now.weekday() < 5
             is_market_hours = (10 <= now.hour < 18) or (now.hour == 18 and now.minute <= 10)
 
