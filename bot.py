@@ -29,7 +29,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
 # Telegram Entegrasyon Bilgileri
-TELEGRAM_TOKEN = "8853048772:AAEW2ekJlDBc3EK9pWTiC8pLZVm_9RBwas"
+TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 TELEGRAM_CHAT_ID = "1131754179"
 PORTFOLIO_FILE = "portfolio.json"
 
@@ -76,9 +76,6 @@ def save_portfolio(portfolio):
 
 # ================== SUPERTREND HESAPLAMA ================== 
 def calculate_supertrend(df, period=10, multiplier=3):
-    """
-    Supertrend indikatörünü hesaplar.
-    """
     hl2 = (df['High'] + df['Low']) / 2
     
     # True Range (TR) Hesaplama
@@ -98,21 +95,18 @@ def calculate_supertrend(df, period=10, multiplier=3):
     df['LowerBand'] = 0.0
     df['Supertrend'] = True
     
-    # Bantların ve Supertrend yönünün döngü ile tespiti
+    # Bantların ve Supertrend yönünün tespiti
     for i in range(period, len(df)):
-        # Üst bant hesaplama
         if df['UpperBasic'].iloc[i] < df['UpperBand'].iloc[i-1] or df['Close'].iloc[i-1] > df['UpperBand'].iloc[i-1]:
             df.loc[df.index[i], 'UpperBand'] = df['UpperBasic'].iloc[i]
         else:
             df.loc[df.index[i], 'UpperBand'] = df['UpperBand'].iloc[i-1]
             
-        # Alt bant hesaplama
         if df['LowerBasic'].iloc[i] > df['LowerBand'].iloc[i-1] or df['Close'].iloc[i-1] < df['LowerBand'].iloc[i-1]:
             df.loc[df.index[i], 'LowerBand'] = df['LowerBasic'].iloc[i]
         else:
             df.loc[df.index[i], 'LowerBand'] = df['LowerBand'].iloc[i-1]
             
-        # Trend Yönü Kararı
         if i == period:
             df.loc[df.index[i], 'Supertrend'] = True if df['Close'].iloc[i] > df['UpperBand'].iloc[i] else False
         else:
@@ -131,29 +125,26 @@ def check_signals():
     
     for symbol in SYMBOLS:
         try:
-            # 30 Dakikalık veriler çekiliyor
             df = yf.download(symbol, period="5d", interval="30m", progress=False)
             if df.empty or len(df) < 25:
                 continue
             
-            # Çoklu sütun yapılarını düzeltme (yfinance güncellemeleri için önlem)
             if isinstance(df.columns, pd.MultiIndex):
                 df.columns = df.columns.get_level_values(0)
 
-            # Supertrend Hesapla (10 periyot, 3 çarpan)
             df = calculate_supertrend(df, period=10, multiplier=3)
             
             current_price = float(df['Close'].iloc[-1])
             prev_trend = df['Supertrend'].iloc[-2]
             curr_trend = df['Supertrend'].iloc[-1]
             
-            # AL SİNYALI (Supertrend Alıcılı tarafa döndü: False -> True)
+            # AL SİNYALİ
             if not prev_trend and curr_trend:
                 if symbol not in portfolio:
                     portfolio[symbol] = {
                         "buy_price": current_price,
-                        "stop_loss": current_price * 0.98,  # %2 Stop
-                        "take_profit": current_price * 1.04 # %4 Kâr Al
+                        "stop_loss": current_price * 0.98,
+                        "take_profit": current_price * 1.04
                     }
                     save_portfolio(portfolio)
                     
@@ -165,7 +156,7 @@ def check_signals():
                     )
                     send_telegram(msg)
             
-            # SAT SİNYALI / RİSK YÖNETİMİ (Supertrend Satıcılı tarafa döndü VEYA Stop/Kâr Seviyesi)
+            # SAT SİNYALİ / RİSK YÖNETİMİ
             elif symbol in portfolio:
                 buy_data = portfolio[symbol]
                 buy_price = buy_data["buy_price"]
@@ -173,7 +164,7 @@ def check_signals():
                 take_profit = buy_data["take_profit"]
                 
                 sell_reason = ""
-                if curr_trend and not prev_trend: # Trend aşağı döndü
+                if curr_trend and not prev_trend:
                     sell_reason = "Supertrend Aşağı Kesti 📉"
                 elif current_price <= stop_loss:
                     sell_reason = "Stop-Loss (Zarar Kes) Seviyesi! 🛑"
@@ -197,7 +188,7 @@ def check_signals():
         except Exception as e:
             logging.error(f"{symbol} analizi sırasında hata oluştu: {e}")
         
-        time.sleep(1) # Hisse başı bekleme
+        time.sleep(1)
 
 # ================== ANA ÇALIŞMA DÖNGÜSÜ ================== 
 def main():
@@ -207,7 +198,6 @@ def main():
     while True:
         try:
             now = datetime.datetime.now(istanbul_tz)
-            # BIST Çalışma Saatleri Kontrolü (Hafta içi 09:30 - 18:15 arası)
             is_weekday = now.weekday() < 5
             is_market_hours = (now.hour == 9 and now.minute >= 30) or (10 <= now.hour < 18) or (now.hour == 18 and now.minute <= 15)
             
@@ -220,7 +210,6 @@ def main():
         except Exception as e:
             logging.error(f"Ana döngü hatası: {e}")
             
-        # 5 dakikada bir döngüyü tekrarla
         time.sleep(300)
 
 if __name__ == "__main__":
