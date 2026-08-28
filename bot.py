@@ -1,13 +1,19 @@
 import http.server
+imporimport os
+import http.server
 import socketserver
 import threading
 
 def run_web_server():
     handler = http.server.SimpleHTTPRequestHandler
-    with socketserver.TCPServer(("", 10000), handler) as httpd:
+    port = int(os.getenv("PORT", 10000))
+    with socketserver.TCPServer(("", port), handler) as httpd:
         httpd.serve_forever()
 
 threading.Thread(target=run_web_server, daemon=True).start()
+
+threading.Thread(target=run_web_server, daemon=True).start()
+
 
 import os
 import time
