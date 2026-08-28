@@ -13,6 +13,8 @@ import os
 import time
 import json
 import datetime
+import datetime
+import zoneinfo  # Python 3.9+ için standart zaman dilimi
 import requests
 import pandas as pd
 import yfinance as yf
@@ -32,7 +34,7 @@ def telegram_mesaj_gonder(mesaj):
         print("TOKEN veya CHAT_ID eksik!")
         return
     url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": mesaj, "parse_mode": "Markdown"}
+    payload = {"chat_id": CHAT_ID, "text": mesaj, "Markdown"}
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
@@ -55,9 +57,13 @@ def hisse_analiz_et(hisse_kodu):
        print(f"--> {hisse_kodu} taranıyor...", flush=True)
     symbol = f"{hisse_kodu}.IS"
     try:
-        df = yf.download(tickers=symbol, period="5d", interval="30m", progress=False)
-        if df.empty or len(df) < 20:
+                 df = yf.download(tickers=symbol, period="5d", interval="30m", progress=False)
+        if df.empty or len(df) < 25:
             return
+
+        if isinstance(df.columns, pd.MultiIndex):
+            df = df.xs(symbol, level=1, axis=1) if symbol in df.columns.levels[1] else df.droplevel(1, axis=1)
+ 
 
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
@@ -107,7 +113,7 @@ def hisse_analiz_et(hisse_kodu):
 if __name__ == "__main__":
     print("Bot 7/24 döngüde başlatıldı...")
     while True:
-        now = datetime.datetime.now()
+        now = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul"))
         # Hafta içi ve BIST seans saatleri (10:00 - 18:30) kontrolü
         if now.weekday() < 5 and 10 <= now.hour <= 18:
             print(f"[{now.strftime('%H:%M:%S')}] Tarama başlatıldı...", flush=True)
