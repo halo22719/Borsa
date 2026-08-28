@@ -1,9 +1,17 @@
-import http.server
-imporimport os
+import os
+import time
+import json
+import logging
+import threading
 import http.server
 import socketserver
-import threading
+import datetime
+import pytz
+import pandas as pd
+import yfinance as yf
+import requests
 
+# ==================== WEB SERVER (RENDER UYKU ÖNLENMESİ) ====================
 def run_web_server():
     handler = http.server.SimpleHTTPRequestHandler
     port = int(os.getenv("PORT", 10000))
@@ -12,114 +20,141 @@ def run_web_server():
 
 threading.Thread(target=run_web_server, daemon=True).start()
 
-threading.Thread(target=run_web_server, daemon=True).start()
+# ==================== GENEL AYARLAR VE LOGGING ====================
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+PORTFOLIO_FILE = "portfolio.json"
 
-import os
-import time
-import json
-import datetime
-import zoneinfo  # Python 3.9+ için standart zaman dilimi
-import requests
-import pandas as pd
-import yfinance as yf
+# BIST 30 Hisselerinin Tamamı (30 Hisse)
+SYMBOLS = [
+    "AKBNK.IS", "ALARK.IS", "ASELS.IS", "ASTOR.IS", "BIMAS.IS",
+    "BRSAN.IS", "DOAS.IS",  "EKGYO.IS", "ENKAI.IS", "EREGL.IS",
+    "FROTO.IS", "GARAN.IS", "HEKTS.IS", "ISCTR.IS", "KCHOL.IS",
+    "KONTR.IS", "KOZAL.IS", "KRDMD.IS", "ODAS.IS",  "OYAKC.IS",
+    "PETKM.IS", "PGSUS.IS", "SAHOL.IS", "SISE.IS",  "TCELL.IS",
+    "THYAO.IS", "TOASO.IS", "TUPRS.IS", "ULKER.IS", "YKBNK.IS"
+]
 
-# Render üzerindeki Environment Variables'tan bilgileri alır
-TOKEN = os.getenv("TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
-
-HISSELER = ["THYAO", "GARAN", "EREGL", "ASELS", "TUPRS", "AEFES", "AKBNK", "ENKAI", "FROTO", "SISE", "TCELL", "VAKBN", "YKBNK", "TTKOM"]
-PORTFOY_DOSYASI = "portfoy.json"
-
-STOP_LOSS_ORAN = 0.02   # %2 Zarar Kes
-TAKE_PROFIT_ORAN = 0.04 # %4 Kar Al
-
-def telegram_mesaj_gonder(mesaj):
-    if not TOKEN or not CHAT_ID:
-        print("TOKEN veya CHAT_ID eksik!")
+# ==================== YARDIMCI FONKSİYONLAR ====================
+def send_telegram(message):
+    if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
+        logging.warning("Telegram token veya Chat ID tanımlı değil!")
         return
-    url = f"https://api.telegram.org/bot{TOKEN}/sendMessage"
-    payload = {"chat_id": CHAT_ID, "text": mesaj, "Markdown"}
+    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Telegram mesaj hatası: {e}")
+        logging.error(f"Telegram mesajı gönderilemedi: {e}")
 
-def portfoy_oku():
-    if not os.path.exists(PORTFOY_DOSYASI):
-        return {}
+def load_portfolio():
+    if os.path.exists(PORTFOLIO_FILE):
+        try:
+            with open(PORTFOLIO_FILE, "r") as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Portföy okuma hatası: {e}")
+    return {}
+
+def save_portfolio(portfolio):
     try:
-        with open(PORTFOY_DOSYASI, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return {}
+        with open(PORTFOLIO_FILE, "w") as f:
+            json.dump(portfolio, f, indent=4)
+    except Exception as e:
+        logging.error(f"Portföy kaydetme hatası: {e}")
 
-def portfoy_yaz(data):
-    with open(PORTFOY_DOSYASI, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-def hisse_analiz_et(hisse_kodu):
-       print(f"--> {hisse_kodu} taranıyor...", flush=True)
-    symbol = f"{hisse_kodu}.IS"
+# ==================== TEKNİK ANALİZ VE STRATEJİ ====================
+def check_signals(symbol, portfolio):
     try:
-                 df = yf.download(tickers=symbol, period="5d", interval="30m", progress=False)
-        if df.empty or len(df) < 25:
+        ticker = yf.Ticker(symbol)
+        df = ticker.history(period="5d", interval="30m")
+        
+        if df.empty or len(df) < 22:
             return
 
+        # MultiIndex sütun temizliği
         if isinstance(df.columns, pd.MultiIndex):
-            df = df.xs(symbol, level=1, axis=1) if symbol in df.columns.levels[1] else df.droplevel(1, axis=1)
+            df = df.xs(symbol, level=1, axis=1)
 
-        df['SMA20'] = df['Close'].rolling(window=20).mean()
+        # İndikatörler
+        df["SMA5"] = df["Close"].rolling(window=5).mean()
+        df["SMA22"] = df["Close"].rolling(window=22).mean()
 
-        son_fiyat = float(df['Close'].iloc[-1])
-        o_anki_sma = float(df['SMA20'].iloc[-1])
-        bir_onceki_fiyat = float(df['Close'].iloc[-2])
-        bir_onceki_sma = float(df['SMA20'].iloc[-2])
+        current_price = float(df["Close"].iloc[-1])
+        prev_sma5 = float(df["SMA5"].iloc[-2])
+        curr_sma5 = float(df["SMA5"].iloc[-1])
+        prev_sma22 = float(df["SMA22"].iloc[-2])
+        curr_sma22 = float(df["SMA22"].iloc[-1])
 
-        zaman_str = datetime.datetime.now().strftime("%H:%M")
-        portfoy = portfoy_oku()
+        clean_symbol = symbol.replace(".IS", "")
 
-        # Pozisyon Kontrolü
-        if hisse_kodu in portfoy:
-            maliyet = portfoy[hisse_kodu]["maliyet"]
-            stop_fiyat = maliyet * (1 - STOP_LOSS_ORAN)
-            kar_fiyat = maliyet * (1 + TAKE_PROFIT_ORAN)
+        # 1. PORTFÖYDEKİ HİSSELER İÇİN SATIŞ / STOP-LOSS KONTROLÜ
+        if clean_symbol in portfolio:
+            entry_price = portfolio[clean_symbol]["entry_price"]
+            stop_loss = entry_price * 0.98    # %2 Stop-Loss
+            take_profit = entry_price * 1.04  # %4 Take-Profit
 
-            if son_fiyat <= stop_fiyat:
-                zarar_yuzde = ((son_fiyat - maliyet) / maliyet) * 100
-                mesaj = f"🛑 *STOP-LOSS TETİKLENDİ!*\n\n*Hisse:* #{hisse_kodu}\n*Maliyet:* {maliyet:.2f} TL\n*Fiyat:* {son_fiyat:.2f} TL (%{zarar_yuzde:.2f})"
-                telegram_mesaj_gonder(mesaj)
-                del portfoy[hisse_kodu]
-                portfoy_yaz(portfoy)
-            elif son_fiyat >= kar_fiyat:
-                kar_yuzde = ((son_fiyat - maliyet) / maliyet) * 100
-                mesaj = f"🎯 *KAR AL TETİKLENDİ!*\n\n*Hisse:* #{hisse_kodu}\n*Maliyet:* {maliyet:.2f} TL\n*Fiyat:* {son_fiyat:.2f} TL (+%{kar_yuzde:.2f})"
-                telegram_mesaj_gonder(mesaj)
-                del portfoy[hisse_kodu]
-                portfoy_yaz(portfoy)
-            elif bir_onceki_fiyat > bir_onceki_sma and son_fiyat < o_anki_sma:
-                mesaj = f"🔴 *SAT / TREND KIRILIMI!*\n\n*Hisse:* #{hisse_kodu}\n*Fiyat:* {son_fiyat:.2f} TL"
-                telegram_mesaj_gonder(mesaj)
-                del portfoy[hisse_kodu]
-                portfoy_yaz(portfoy)
+            # Stop-Loss veya Take-Profit Tetiklendi mi?
+            if current_price <= stop_loss:
+                send_telegram(f"🚨 *STOP-LOSS KESİLDİ*\n\nHisse: #{clean_symbol}\nAlış: {entry_price:.2f} TL\nSatış: {current_price:.2f} TL\nZarar: %{((current_price/entry_price)-1)*100:.2f}")
+                del portfolio[clean_symbol]
+                save_portfolio(portfolio)
+                return
+
+            elif current_price >= take_profit:
+                send_telegram(f"🎯 *TAKE-PROFIT HEDEFİNE ULAŞILDI*\n\nHisse: #{clean_symbol}\nAlış: {entry_price:.2f} TL\nSatış: {current_price:.2f} TL\nKâr: %{((current_price/entry_price)-1)*100:.2f}")
+                del portfolio[clean_symbol]
+                save_portfolio(portfolio)
+                return
+
+            # SMA Satış Kesişimi (SMA5, SMA22'yi aşağı kırdıysa)
+            elif prev_sma5 >= prev_sma22 and curr_sma5 < curr_sma22:
+                send_telegram(f"📉 *SAT SİNYALİ (SMA Kesişimi)*\n\nHisse: #{clean_symbol}\nFiyat: {current_price:.2f} TL")
+                del portfolio[clean_symbol]
+                save_portfolio(portfolio)
+                return
+
+        # 2. ALIM SİNYALİ KONTROLÜ (SMA5, SMA22'yi yukarı kırdıysa)
         else:
-            if bir_onceki_fiyat < bir_onceki_sma and son_fiyat > o_anki_sma:
-                mesaj = f"🟢 *AL SİNYALİ!*\n\n*Hisse:* #{hisse_kodu}\n*Giriş Fiyatı:* {son_fiyat:.2f} TL\n*Saat:* {zaman_str}"
-                telegram_mesaj_gonder(mesaj)
-                portfoy[hisse_kodu] = {"maliyet": son_fiyat, "tarih": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")}
-                portfoy_yaz(portfoy)
+            if prev_sma5 <= prev_sma22 and curr_sma5 > curr_sma22:
+                portfolio[clean_symbol] = {
+                    "entry_price": current_price,
+                    "time": datetime.datetime.now().strftime("%Y-%m-%d %H:%M")
+                }
+                save_portfolio(portfolio)
+                send_telegram(f"🚀 *AL SİNYALİ*\n\nHisse: #{clean_symbol}\nFiyat: {current_price:.2f} TL\nStop: {current_price*0.98:.2f} TL\nHedef: {current_price*1.04:.2f} TL")
+
     except Exception as e:
-        print(f"{hisse_kodu} hatası: {e}")
+        logging.error(f"{symbol} analiz hatası: {e}")
+
+# ==================== ANA DÖNGÜ VE SEANS SAATİ KONTROLÜ ====================
+def main():
+    send_telegram("🤖 *Borsa İstanbul Botu Başarıyla Başlatıldı!*")
+    tz = pytz.timezone("Europe/Istanbul")
+    
+    while True:
+        try:
+            now = datetime.datetime.now(tz)
+            
+            # Pazartesi(0) - Cuma(4) ve Seans Saatleri (10:00 - 18:10)
+            is_weekday = now.weekday() < 5
+            is_market_hours = (10 <= now.hour < 18) or (now.hour == 18 and now.minute <= 10)
+
+            if is_weekday and is_market_hours:
+                portfolio = load_portfolio()
+                for symbol in SYMBOLS:
+                    check_signals(symbol, portfolio)
+                # Seans sırasında her 5 dakikada bir kontrol eder
+                time.sleep(300)
+            else:
+                # Seans dışındaysa 15 dakikada bir kontrol eder
+                time.sleep(900)
+                
+        except Exception as e:
+            logging.error(f"Ana döngü hatası: {e}")
+            time.sleep(60)
 
 if __name__ == "__main__":
-    print("Bot 7/24 döngüde başlatıldı...")
-    while True:
-        now = datetime.datetime.now(zoneinfo.ZoneInfo("Europe/Istanbul"))
-        # Hafta içi ve BIST seans saatleri (10:00 - 18:30) kontrolü
-        if now.weekday() < 5 and 10 <= now.hour <= 18:
-            print(f"[{now.strftime('%H:%M:%S')}] Tarama başlatıldı...", flush=True)
-            for hisse in HISSELER:
-            hisse_analiz_et(hisse)
-        
-            time.sleep(1800)  # 30 dakikada bir tarar
- 
+    main()
