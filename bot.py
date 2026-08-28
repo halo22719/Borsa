@@ -52,6 +52,7 @@ def portfoy_yaz(data):
         json.dump(data, f, ensure_ascii=False, indent=2)
 
 def hisse_analiz_et(hisse_kodu):
+       print(f"--> {hisse_kodu} taranıyor...", flush=True)
     symbol = f"{hisse_kodu}.IS"
     try:
         df = yf.download(tickers=symbol, period="5d", interval="30m", progress=False)
@@ -108,7 +109,8 @@ if __name__ == "__main__":
     while True:
         now = datetime.datetime.now()
         # Hafta içi ve BIST seans saatleri (10:00 - 18:30) kontrolü
-        if now.weekday() < 5 and 10 <= now.hour <= 18:
+        if now.weekday() < 5 and 10 <= now.hour <= 18:        print(f"[{now.strftime('%H:%M:%S')}] Tarama başlatıldı...", flush=True)
+
             print(f"[{now.strftime('%H:%M:%S')}] Tarama yapılıyor...")
             for hisse in HISSELER:
                 hisse_analiz_et(hisse)
