@@ -13,7 +13,6 @@ import os
 import time
 import json
 import datetime
-import datetime
 import zoneinfo  # Python 3.9+ için standart zaman dilimi
 import requests
 import pandas as pd
@@ -63,10 +62,6 @@ def hisse_analiz_et(hisse_kodu):
 
         if isinstance(df.columns, pd.MultiIndex):
             df = df.xs(symbol, level=1, axis=1) if symbol in df.columns.levels[1] else df.droplevel(1, axis=1)
- 
-
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
 
         df['SMA20'] = df['Close'].rolling(window=20).mean()
 
