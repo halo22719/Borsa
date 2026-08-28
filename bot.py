@@ -110,12 +110,9 @@ if __name__ == "__main__":
         now = datetime.datetime.now()
         # Hafta içi ve BIST seans saatleri (10:00 - 18:30) kontrolü
         if now.weekday() < 5 and 10 <= now.hour <= 18:
-    print(f"[{now.strftime('%H:%M:%S')}] Tarama başlatıldı...", flush=True)
-    for hisse in HISSELER:
-        hisse_analiz_et(hisse)
-
-
-            print(f"[{now.strftime('%H:%M:%S')}] Tarama yapılıyor...")
+            print(f"[{now.strftime('%H:%M:%S')}] Tarama başlatıldı...", flush=True)
             for hisse in HISSELER:
-                hisse_analiz_et(hisse)
-        time.sleep(1800) # 30 dakikada bir tarar
+            hisse_analiz_et(hisse)
+        
+            time.sleep(1800)  # 30 dakikada bir tarar
+ 
