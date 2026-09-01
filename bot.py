@@ -1,216 +1,178 @@
 import os
 import time
-import json
-import logging
-import threading
-import http.server
-import socketserver
-import datetime
-import pytz
+import requests
 import pandas as pd
 import yfinance as yf
-import requests
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import threading
 
-# ================== WEB SERVER (RENDER UYKU ÖNLEMESİ) ================== 
+# ==================== Mini Web Sunucusu (Render Keep-Alive) ====================
+class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b"BIST 4H Scanner Bot is Running!")
+
+    def do_HEAD(self):
+        self.send_response(200)
+        self.end_headers()
+
 def run_web_server():
-    class SimpleHandler(http.server.SimpleHTTPRequestHandler):
-        def do_GET(self):
-            self.send_response(200)
-            self.end_headers()
-            self.wfile.write(b"Borsa Botu Aktif ve Calisiyor!")
-            
-    port = int(os.getenv("PORT", 10000))
-    with socketserver.TCPServer(("", port), SimpleHandler) as httpd:
-        httpd.serve_forever()
+    port = int(os.environ.get("PORT", 8080))
+    server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
+    print(f"Web sunucusu {port} portunda başlatıldı.")
+    server.serve_forever()
 
+# Web sunucusunu arka planda çalıştır
 threading.Thread(target=run_web_server, daemon=True).start()
 
-# ================== GENEL AYARLAR VE LOGGING ================== 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+# ==================== Bot Ayarları ====================
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Telegram Bot Token'ını girin
+CHAT_ID = "YOUR_CHAT_ID"                    # Telegram Chat ID'nizi girin
 
-# Telegram Entegrasyon Bilgileri
-TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
-TELEGRAM_CHAT_ID = "1131754179"
-PORTFOLIO_FILE = "portfolio.json"
+# Tarama Yapılacak Hisse Listesi (.IS uzantılı)
+HISSELER = ["THYAO.IS", "GARAN.IS", "AKBNK.IS", "EREGL.IS", "SASA.IS", "ASELS.IS"]
 
-# Takip Edilen Hisseler Listesi (BIST)
-SYMBOLS = [
-    "AKBNK.IS", "ALARK.IS", "ASELS.IS", "ASTOR.IS", "BIMAS.IS",
-    "BRSAN.IS", "DOAS.IS", "EKGYO.IS", "ENKAI.IS", "EREGL.IS",
-    "FROTO.IS", "GARAN.IS", "HEKTS.IS", "ISCTR.IS", "KCHOL.IS",
-    "KONTR.IS", "KRDMD.IS", "ODAS.IS", "OYAKC.IS", "PETKM.IS",
-    "PGSUS.IS", "REEDR.IS", "SAHOL.IS", "SISE.IS", "TCELL.IS",
-    "THYAO.IS", "TOASO.IS", "TUPRS.IS", "ULKER.IS", "YKBNK.IS"
-]
-
-# ================== YARDIMCI FONKSİYONLAR ================== 
-def send_telegram(message):
+def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {
-        "chat_id": TELEGRAM_CHAT_ID,
-        "text": message,
-        "parse_mode": "Markdown"
-    }
+    payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        response = requests.post(url, json=payload, timeout=10)
-        if response.status_code != 200:
-            logging.error(f"Telegram mesajı gönderilemedi: {response.text}")
+        requests.post(url, json=payload)
     except Exception as e:
-        logging.error(f"Telegram bağlantı hatası: {e}")
+        print(f"Telegram mesajı gönderilemedi: {e}")
 
-def load_portfolio():
-    if os.path.exists(PORTFOLIO_FILE):
-        try:
-            with open(PORTFOLIO_FILE, "r") as f:
-                return json.load(f)
-        except Exception:
-            return {}
-    return {}
-
-def save_portfolio(portfolio):
-    try:
-        with open(PORTFOLIO_FILE, "w") as f:
-            json.dump(portfolio, f, indent=4)
-    except Exception as e:
-        logging.error(f"Portföy kaydedilemedi: {e}")
-
-# ================== SUPERTREND HESAPLAMA ================== 
+# ==================== İndikatör Hesaplamaları ====================
 def calculate_supertrend(df, period=10, multiplier=3):
-    hl2 = (df['High'] + df['Low']) / 2
+    high = df['High']
+    low = df['Low']
+    close = df['Close']
     
-    # True Range (TR) Hesaplama
-    df['TR1'] = abs(df['High'] - df['Low'])
-    df['TR2'] = abs(df['High'] - df['Close'].shift(1))
-    df['TR3'] = abs(df['Low'] - df['Close'].shift(1))
-    df['TR'] = df[['TR1', 'TR2', 'TR3']].max(axis=1)
+    # ATR Hesaplama
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+    atr = tr.ewm(alpha=1/period, adjust=False).mean()
     
-    # Average True Range (ATR)
-    df['ATR'] = df['TR'].rolling(window=period).mean()
+    hl2 = (high + low) / 2
+    basic_upperband = hl2 + (multiplier * atr)
+    basic_lowerband = hl2 - (multiplier * atr)
     
-    # Temel Üst ve Alt Bantlar
-    df['UpperBasic'] = hl2 + (multiplier * df['ATR'])
-    df['LowerBasic'] = hl2 - (multiplier * df['ATR'])
+    final_upperband = basic_upperband.copy()
+    final_lowerband = basic_lowerband.copy()
     
-    df['UpperBand'] = 0.0
-    df['LowerBand'] = 0.0
-    df['Supertrend'] = True
-    
-    # Bantların ve Supertrend yönünün tespiti
-    for i in range(period, len(df)):
-        if df['UpperBasic'].iloc[i] < df['UpperBand'].iloc[i-1] or df['Close'].iloc[i-1] > df['UpperBand'].iloc[i-1]:
-            df.loc[df.index[i], 'UpperBand'] = df['UpperBasic'].iloc[i]
+    for i in range(1, len(df)):
+        if basic_upperband.iloc[i] < final_upperband.iloc[i-1] or close.iloc[i-1] > final_upperband.iloc[i-1]:
+            final_upperband.iloc[i] = basic_upperband.iloc[i]
         else:
-            df.loc[df.index[i], 'UpperBand'] = df['UpperBand'].iloc[i-1]
+            final_upperband.iloc[i] = final_upperband.iloc[i-1]
             
-        if df['LowerBasic'].iloc[i] > df['LowerBand'].iloc[i-1] or df['Close'].iloc[i-1] < df['LowerBand'].iloc[i-1]:
-            df.loc[df.index[i], 'LowerBand'] = df['LowerBasic'].iloc[i]
+        if basic_lowerband.iloc[i] > final_lowerband.iloc[i-1] or close.iloc[i-1] < final_lowerband.iloc[i-1]:
+            final_lowerband.iloc[i] = basic_lowerband.iloc[i]
         else:
-            df.loc[df.index[i], 'LowerBand'] = df['LowerBand'].iloc[i-1]
+            final_lowerband.iloc[i] = final_lowerband.iloc[i-1]
             
-        if i == period:
-            df.loc[df.index[i], 'Supertrend'] = True if df['Close'].iloc[i] > df['UpperBand'].iloc[i] else False
-        else:
-            if df['Supertrend'].iloc[i-1] == False and df['Close'].iloc[i] > df['UpperBand'].iloc[i]:
-                df.loc[df.index[i], 'Supertrend'] = True
-            elif df['Supertrend'].iloc[i-1] == True and df['Close'].iloc[i] < df['LowerBand'].iloc[i]:
-                df.loc[df.index[i], 'Supertrend'] = False
-            else:
-                df.loc[df.index[i], 'Supertrend'] = df['Supertrend'].iloc[i-1]
-                
-    return df
-
-# ================== PİYASA ANALİZ MOTORU ================== 
-def check_signals():
-    portfolio = load_portfolio()
+    supertrend = pd.Series(index=df.index, dtype='float64')
+    direction = pd.Series(1, index=df.index)
     
-    for symbol in SYMBOLS:
-        try:
-            df = yf.download(symbol, period="5d", interval="30m", progress=False)
-            if df.empty or len(df) < 25:
-                continue
+    for i in range(1, len(df)):
+        if close.iloc[i] > final_upperband.iloc[i-1]:
+            direction.iloc[i] = 1
+        elif close.iloc[i] < final_lowerband.iloc[i-1]:
+            direction.iloc[i] = -1
+        else:
+            direction.iloc[i] = direction.iloc[i-1]
             
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-
-            df = calculate_supertrend(df, period=10, multiplier=3)
-            
-            current_price = float(df['Close'].iloc[-1])
-            prev_trend = df['Supertrend'].iloc[-2]
-            curr_trend = df['Supertrend'].iloc[-1]
-            
-            # AL SİNYALİ
-            if not prev_trend and curr_trend:
-                if symbol not in portfolio:
-                    portfolio[symbol] = {
-                        "buy_price": current_price,
-                        "stop_loss": current_price * 0.98,
-                        "take_profit": current_price * 1.04
-                    }
-                    save_portfolio(portfolio)
-                    
-                    msg = (
-                        f"🟢 *AL SINYALI (Supertrend)*\n"
-                        f"Hisse: `{symbol}`\n"
-                        f"Fiyat: `{current_price:.2f} TL`\n"
-                        f"Strateji: Trend Yukarı Döndü 🚀"
-                    )
-                    send_telegram(msg)
-            
-            # SAT SİNYALİ / RİSK YÖNETİMİ
-            elif symbol in portfolio:
-                buy_data = portfolio[symbol]
-                buy_price = buy_data["buy_price"]
-                stop_loss = buy_data["stop_loss"]
-                take_profit = buy_data["take_profit"]
-                
-                sell_reason = ""
-                if curr_trend and not prev_trend:
-                    sell_reason = "Supertrend Aşağı Kesti 📉"
-                elif current_price <= stop_loss:
-                    sell_reason = "Stop-Loss (Zarar Kes) Seviyesi! 🛑"
-                elif current_price >= take_profit:
-                    sell_reason = "Take-Profit (Kâr Al) Hedefine Ulaşıldı! 🎯"
-                
-                if sell_reason:
-                    profit_loss_pct = ((current_price - buy_price) / buy_price) * 100
-                    msg = (
-                        f"🔴 *SAT / KAPATMA SİNYALI*\n"
-                        f"Hisse: `{symbol}`\n"
-                        f"Alış Fiyatı: `{buy_price:.2f} TL`\n"
-                        f"Satış/Güncel Fiyat: `{current_price:.2f} TL`\n"
-                        f"Getiri: `%{profit_loss_pct:.2f}`\n"
-                        f"Gerekçe: {sell_reason}"
-                    )
-                    send_telegram(msg)
-                    del portfolio[symbol]
-                    save_portfolio(portfolio)
-                    
-        except Exception as e:
-            logging.error(f"{symbol} analizi sırasında hata oluştu: {e}")
+        supertrend.iloc[i] = final_lowerband.iloc[i] if direction.iloc[i] == 1 else final_upperband.iloc[i]
         
-        time.sleep(1)
+    return supertrend, direction
 
-# ================== ANA ÇALIŞMA DÖNGÜSÜ ================== 
-def main():
-    send_telegram("🤖 *Borsa İstanbul Supertrend Botu Başarıyla Başlatıldı!*")
-    istanbul_tz = pytz.timezone("Europe/Istanbul")
+def calculate_ott(df, pperiod=2, percent=1.4):
+    close = df['Close']
+    mavg = close.ewm(span=pperiod, adjust=False).mean()
+    fark = mavg * (percent / 100)
     
-    while True:
-        try:
-            now = datetime.datetime.now(istanbul_tz)
-            is_weekday = now.weekday() < 5
-            is_market_hours = (now.hour == 9 and now.minute >= 30) or (10 <= now.hour < 18) or (now.hour == 18 and now.minute <= 15)
+    long_stop = mavg - fark
+    short_stop = mavg + fark
+    
+    ott = pd.Series(index=df.index, dtype='float64')
+    
+    for i in range(1, len(df)):
+        if mavg.iloc[i] > long_stop.iloc[i-1]:
+            long_stop.iloc[i] = max(long_stop.iloc[i], long_stop.iloc[i-1])
+        if mavg.iloc[i] < short_stop.iloc[i-1]:
+            short_stop.iloc[i] = min(short_stop.iloc[i], short_stop.iloc[i-1])
             
-            if is_weekday and is_market_hours:
-                logging.info("Piyasa açık, Supertrend sinyalleri taranıyor...")
-                check_signals()
-            else:
-                logging.info("Piyasa kapalı veya seans dışı saatlerdeyiz. Bekleniyor...")
+        if mavg.iloc[i] > short_stop.iloc[i-1]:
+            ott.iloc[i] = long_stop.iloc[i]
+        elif mavg.iloc[i] < long_stop.iloc[i-1]:
+            ott.iloc[i] = short_stop.iloc[i]
+        else:
+            ott.iloc[i] = ott.iloc[i-1] if not pd.isna(ott.iloc[i-1]) else long_stop.iloc[i]
+            
+    return ott, mavg
+
+# ==================== Tarama Döngüsü ====================
+def scan_markets():
+    print("4 Saatlik BIST Taraması Başlatılıyor...")
+    
+    for ticker in HISSELER:
+        try:
+            # 1 Saatlik veriyi çekip 4 saatlik mumlara dönüştürüyoruz (Resampling)
+            data = yf.download(ticker, period="60d", interval="1h", progress=False)
+            
+            if data.empty or len(data) < 50:
+                continue
+                
+            # MultiIndex sütun yapısını düzeltme (gerekirse)
+            if isinstance(data.columns, pd.MultiIndex):
+                data.columns = data.columns.get_level_values(0)
+
+            # 4 Saatlik periyoda çevirme
+            df_4h = data.resample('4h').agg({
+                'Open': 'first',
+                'High': 'max',
+                'Low': 'min',
+                'Close': 'last',
+                'Volume': 'sum'
+            }).dropna()
+
+            # İndikatörleri Hesapla
+            df_4h['Supertrend'], df_4h['ST_Direction'] = calculate_supertrend(df_4h)
+            df_4h['OTT'], df_4h['MA'] = calculate_ott(df_4h)
+            df_4h['EMA50'] = df_4h['Close'].ewm(span=50, adjust=False).mean()
+
+            # Son Tamamlanan ve Bir Önceki Mum Verisi
+            last_row = df_4h.iloc[-1]
+            prev_row = df_4h.iloc[-2]
+
+            # Koşullar: Supertrend AL'a geçti mi + OTT Trend Onayı Var mı + EMA50 Üzerinde mi
+            st_buy_signal = (prev_row['ST_Direction'] == -1) and (last_row['ST_Direction'] == 1)
+            ott_bullish = last_row['MA'] > last_row['OTT']
+            trend_above_ema = last_row['Close'] > last_row['EMA50']
+
+            if st_buy_signal and ott_bullish and trend_above_ema:
+                entry_price = round(last_row['Close'], 2)
+                stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop-Loss
+                take_profit = round(entry_price * 1.07, 2)   # %7 Take-Profit
+
+                message = (
+                    f"🚀 *BİST 4 SAATLİK AL SİNYALİ*\n\n"
+                    f"📌 **Hisse:** `{ticker}`\n"
+                    f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
+                    f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
+                    f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
+                    f"📊 *Filtreler:* Supertrend AL + OTT Boğa + EMA50 Üzerinde"
+                )
+                print(f"Sinyal Bulundu: {ticker}")
+                send_telegram_message(message)
                 
         except Exception as e:
-            logging.error(f"Ana döngü hatası: {e}")
-            
-        time.sleep(300)
+            print(f"{ticker} işlenirken hata oluştu: {e}")
 
+# ==================== Ana Çalıştırma Döngüsü ====================
 if __name__ == "__main__":
-    main()
+    while True:
+        scan_markets()
+        # 4 saatlik grafiklerde her saat başı tarama yapmak yeterlidir (3600 saniye)
+        time.sleep(3600)
