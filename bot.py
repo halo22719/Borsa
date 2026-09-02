@@ -11,7 +11,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST 4H Scanner Bot is Running!")
+        self.wfile.write(b"BIST 100 4H Scanner Bot is Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -27,11 +27,23 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ==================== Bot Ayarları ====================
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Telegram Bot Token'ını girin
+TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Telegram Bot Token'ınızı girin
 CHAT_ID = "YOUR_CHAT_ID"                    # Telegram Chat ID'nizi girin
 
-# Tarama Yapılacak Hisse Listesi (.IS uzantılı)
-HISSELER = ["THYAO.IS", "GARAN.IS", "AKBNK.IS", "EREGL.IS", "SASA.IS", "ASELS.IS"]
+# BIST 100 Hisselerinin Tamamı (.IS uzantılı)
+HISSELER = [
+    "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
+    "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
+    "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", "CANTE.IS", "CCOLA.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS",
+    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", "EUREK.IS",
+    "FROTO.IS", "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS",
+    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KOZAL.IS", "KOZAA.IS", "KRDMD.IS", "KSTUR.IS",
+    "LMKDC.IS", "MAALT.IS", "MAVI.IS", "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS",
+    "OYAKC.IS", "PASEU.IS", "PETKM.IS", "PGSUS.IS", "PLTUR.IS", "PSGYO.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS",
+    "SISE.IS", "SKBNK.IS", "SMRTG.IS", "SOKM.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TMSN.IS", "TOASO.IS",
+    "TSKB.IS", "TTKOM.IS", "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS",
+    "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
+]
 
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
@@ -114,7 +126,7 @@ def calculate_ott(df, pperiod=2, percent=1.4):
 
 # ==================== Tarama Döngüsü ====================
 def scan_markets():
-    print("4 Saatlik BIST Taraması Başlatılıyor...")
+    print("BIST 100 (4 Saatlik) Taraması Başlatılıyor...")
     
     for ticker in HISSELER:
         try:
@@ -124,7 +136,7 @@ def scan_markets():
             if data.empty or len(data) < 50:
                 continue
                 
-            # MultiIndex sütun yapısını düzeltme (gerekirse)
+            # MultiIndex sütun yapısını düzeltme
             if isinstance(data.columns, pd.MultiIndex):
                 data.columns = data.columns.get_level_values(0)
 
@@ -157,7 +169,7 @@ def scan_markets():
                 take_profit = round(entry_price * 1.07, 2)   # %7 Take-Profit
 
                 message = (
-                    f"🚀 *BİST 4 SAATLİK AL SİNYALİ*\n\n"
+                    f"🚀 *BİST 100 - 4 SAATLİK AL SİNYALİ*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
                     f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
                     f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
@@ -174,5 +186,5 @@ def scan_markets():
 if __name__ == "__main__":
     while True:
         scan_markets()
-        # 4 saatlik grafiklerde her saat başı tarama yapmak yeterlidir (3600 saniye)
+        # 1 saatte bir tüm BIST 100 hisselerini tara
         time.sleep(3600)
