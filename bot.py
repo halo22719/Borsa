@@ -27,8 +27,8 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ==================== Bot Ayarları ====================
-TELEGRAM_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"  # Telegram Bot Token'ınızı girin
-CHAT_ID = "YOUR_CHAT_ID"                    # Telegram Chat ID'nizi girin
+TELEGRAM_TOKEN = "7950361257:AAFm3T4mI3-S09tJp3S2I44q2J84d5m8"  # Sizin Telegram Bot Token'ınız
+CHAT_ID = "6190835848"                                      # Sizin Telegram Chat ID'niz
 
 # BIST 100 Hisselerinin Tamamı (.IS uzantılı)
 HISSELER = [
