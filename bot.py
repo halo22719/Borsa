@@ -11,7 +11,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST 100 4H Scanner Bot is Running!")
+        self.wfile.write(b"BIST 100 Multi-Timeframe (4H/1H) Scanner Bot is Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -27,22 +27,22 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ==================== Bot Ayarları ====================
-TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"  # Yeni Bot Token
-CHAT_ID = "1131754179"                                            # Yeni Chat ID
+TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
+CHAT_ID = "1131754179"
 
 # BIST 100 Hisselerinin Tamamı (.IS uzantılı)
 HISSELER = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
     "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", "CANTE.IS", "CCOLA.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS",
-    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS",
+    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", "EUREK.IS",
     "FROTO.IS", "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS",
-    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KRDMD.IS", "KSTUR.IS",
+    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KOZAL.IS", "KOZAA.IS", "KRDMD.IS", "KSTUR.IS",
     "LMKDC.IS", "MAALT.IS", "MAVI.IS", "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS",
     "OYAKC.IS", "PASEU.IS", "PETKM.IS", "PGSUS.IS", "PLTUR.IS", "PSGYO.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS",
     "SISE.IS", "SKBNK.IS", "SMRTG.IS", "SOKM.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TMSN.IS", "TOASO.IS",
     "TSKB.IS", "TTKOM.IS", "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS",
-    "YKBNK.IS", "YYLGD.IS"
+    "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
 ]
 
 def send_telegram_message(message):
@@ -59,7 +59,6 @@ def calculate_supertrend(df, period=10, multiplier=3):
     low = df['Low']
     close = df['Close']
     
-    # ATR Hesaplama
     tr1 = high - low
     tr2 = abs(high - close.shift(1))
     tr3 = abs(low - close.shift(1))
@@ -124,24 +123,51 @@ def calculate_ott(df, pperiod=2, percent=1.4):
             
     return ott, mavg
 
+def calculate_rsi(df, period=14):
+    delta = df['Close'].diff()
+    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
+    rs = gain / loss
+    return 100 - (100 / (1 + rs))
+
+# ==================== Endeks Durumu Kontrolü ====================
+def check_index_bullish():
+    try:
+        idx_data = yf.download("XU100.IS", period="30d", interval="1d", progress=False)
+        if isinstance(idx_data.columns, pd.MultiIndex):
+            idx_data.columns = idx_data.columns.get_level_values(0)
+        idx_data['EMA20'] = idx_data['Close'].ewm(span=20, adjust=False).mean()
+        
+        last_close = idx_data['Close'].iloc[-1]
+        last_ema = idx_data['EMA20'].iloc[-1]
+        
+        return last_close > last_ema
+    except Exception as e:
+        print(f"Endeks verisi alınamadı: {e}")
+        return True
+
 # ==================== Tarama Döngüsü ====================
 def scan_markets():
-    print("BIST 100 (4 Saatlik) Taraması Başlatılıyor...")
+    print("BIST 100 (4H Ana Trend + 1H Tetikleyici) Taraması Başlatılıyor...")
     
+    # 1. Kontrol: Endeks Durumu (XU100 > EMA20)
+    if not check_index_bullish():
+        print("BİST 100 Endeksi (XU100) EMA20 altında! Genel piyasa düşüşte olduğu için tarama pasif.")
+        return
+
     for ticker in HISSELER:
         try:
-            # 1 Saatlik veriyi çekip 4 saatlik mumlara dönüştürüyoruz (Resampling)
-            data = yf.download(ticker, period="60d", interval="1h", progress=False)
+            # 1 Saatlik Veri Çekme
+            data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
             
-            if data.empty or len(data) < 50:
+            if data_1h.empty or len(data_1h) < 50:
                 continue
                 
-            # MultiIndex sütun yapısını düzeltme
-            if isinstance(data.columns, pd.MultiIndex):
-                data.columns = data.columns.get_level_values(0)
+            if isinstance(data_1h.columns, pd.MultiIndex):
+                data_1h.columns = data_1h.columns.get_level_values(0)
 
-            # 4 Saatlik periyoda çevirme
-            df_4h = data.resample('4h').agg({
+            # 4 Saatlik Veriye Dönüştürme (Resampling)
+            df_4h = data_1h.resample('4h').agg({
                 'Open': 'first',
                 'High': 'max',
                 'Low': 'min',
@@ -149,34 +175,46 @@ def scan_markets():
                 'Volume': 'sum'
             }).dropna()
 
-            # İndikatörleri Hesapla
+            # --- 4 SAATLİK GRAFİK HESAPLAMALARI (Ana Trend) ---
             df_4h['Supertrend'], df_4h['ST_Direction'] = calculate_supertrend(df_4h)
             df_4h['OTT'], df_4h['MA'] = calculate_ott(df_4h)
             df_4h['EMA50'] = df_4h['Close'].ewm(span=50, adjust=False).mean()
+            
+            last_4h = df_4h.iloc[-1]
 
-            # Son Tamamlanan ve Bir Önceki Mum Verisi
-            last_row = df_4h.iloc[-1]
-            prev_row = df_4h.iloc[-2]
+            # 4H Üst Periyot Onay Koşulları: Supertrend AL + OTT Boğa + EMA50 Üzerinde
+            trend_4h_ok = (last_4h['ST_Direction'] == 1) and (last_4h['MA'] > last_4h['OTT']) and (last_4h['Close'] > last_4h['EMA50'])
 
-            # Koşullar: Supertrend AL'a geçti mi + OTT Trend Onayı Var mı + EMA50 Üzerinde mi
-            st_buy_signal = (prev_row['ST_Direction'] == -1) and (last_row['ST_Direction'] == 1)
-            ott_bullish = last_row['MA'] > last_row['OTT']
-            trend_above_ema = last_row['Close'] > last_row['EMA50']
+            if not trend_4h_ok:
+                continue # 4H Trend YUKARI değilse alt periyoda bakmadan diğer hisseye geç
 
-            if st_buy_signal and ott_bullish and trend_above_ema:
-                entry_price = round(last_row['Close'], 2)
+            # --- 1 SAATLİK GRAFİK HESAPLAMALARI (Tetikleyici / Giriş) ---
+            data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
+            data_1h['RSI'] = calculate_rsi(data_1h)
+            data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
+
+            last_1h = data_1h.iloc[-1]
+            prev_1h = data_1h.iloc[-2]
+
+            # 1H Alt Periyot Koşulları:
+            st_buy_signal_1h = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1) # 1H'de YENİ AL
+            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']                            # Hacim Onayı
+            rsi_ok = 40 <= last_1h['RSI'] <= 68                                                    # RSI Onayı
+
+            if st_buy_signal_1h and volume_confirmed and rsi_ok:
+                entry_price = round(last_1h['Close'], 2)
                 stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop-Loss
                 take_profit = round(entry_price * 1.07, 2)   # %7 Take-Profit
 
                 message = (
-                    f"🚀 *BİST 100 - 4 SAATLİK AL SİNYALİ*\n\n"
+                    f"🎯 *BİST 100 - ÇİFT PERİYOTLU (4H/1H) AL SİNYALİ*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
                     f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
                     f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
                     f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
-                    f"📊 *Filtreler:* Supertrend AL + OTT Boğa + EMA50 Üzerinde"
+                    f"📊 *Filtreler:* 4H Trend Boğa + 1H Yeni AL + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)}) + XU100 Pozitif"
                 )
-                print(f"Sinyal Bulundu: {ticker}")
+                print(f"Gelişmiş Sinyal Bulundu: {ticker}")
                 send_telegram_message(message)
                 
         except Exception as e:
@@ -186,5 +224,4 @@ def scan_markets():
 if __name__ == "__main__":
     while True:
         scan_markets()
-        # 1 saatte bir tüm BIST 100 hisselerini tara
         time.sleep(3600)
