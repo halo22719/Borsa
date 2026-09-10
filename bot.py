@@ -11,7 +11,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST 100 1H Scanner Bot is Running!")
+        self.wfile.write(b"BIST 100 1H Scanner Bot (AL/SAT) is Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -35,9 +35,9 @@ HISSELER = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
     "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", "CANTE.IS", "CCOLA.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS",
-    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", 
+    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", "EUREK.IS",
     "FROTO.IS", "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS",
-    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KRDMD.IS", "KSTUR.IS",
+    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KOZAL.IS", "KOZAA.IS", "KRDMD.IS", "KSTUR.IS",
     "LMKDC.IS", "MAALT.IS", "MAVI.IS", "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS",
     "OYAKC.IS", "PASEU.IS", "PETKM.IS", "PGSUS.IS", "PLTUR.IS", "PSGYO.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS",
     "SISE.IS", "SKBNK.IS", "SMRTG.IS", "SOKM.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TMSN.IS", "TOASO.IS",
@@ -107,11 +107,10 @@ def calculate_rsi(df, period=14):
 
 # ==================== Tarama Döngüsü ====================
 def scan_markets():
-    print("BIST 100 (1H Grafik) Taraması Başlatılıyor...")
+    print("BIST 100 (1H Grafik - AL/SAT) Taraması Başlatılıyor...")
 
     for ticker in HISSELER:
         try:
-            # 1 Saatlik Veri Çekme
             data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
             
             if data_1h.empty or len(data_1h) < 50:
@@ -120,7 +119,7 @@ def scan_markets():
             if isinstance(data_1h.columns, pd.MultiIndex):
                 data_1h.columns = data_1h.columns.get_level_values(0)
 
-            # --- 1 SAATLİK GRAFİK HESAPLAMALARI ---
+            # İndikatör Hesaplamaları
             data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
             data_1h['RSI'] = calculate_rsi(data_1h)
             data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
@@ -128,27 +127,48 @@ def scan_markets():
             last_1h = data_1h.iloc[-1]
             prev_1h = data_1h.iloc[-2]
 
-            # 1H Sinyal Koşulları:
-            st_buy_signal_1h = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1) # Supertrend YENİ AL
-            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']                            # Hacim Onayı
-            rsi_ok = 40 <= last_1h['RSI'] <= 68                                                    # RSI Onayı
+            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20'] # Hacim Onayı
 
-            if st_buy_signal_1h and volume_confirmed and rsi_ok:
+            # 🟢 AL SİNYALİ KOŞULLARI
+            st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
+            rsi_buy_ok = 40 <= last_1h['RSI'] <= 68
+
+            if st_buy_signal and volume_confirmed and rsi_buy_ok:
                 entry_price = round(last_1h['Close'], 2)
                 stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop-Loss
                 take_profit = round(entry_price * 1.07, 2)   # %7 Take-Profit
 
                 message = (
-                    f"🎯 *BİST 100 - 1H GRAFİK AL SİNYALİ*\n\n"
+                    f"🟢 *BİST 100 - 1H AL SİNYALİ (ALIM VARANTI)*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
                     f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
                     f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
                     f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
                     f"📊 *Filtreler:* 1H Supertrend YENİ AL + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
                 )
-                print(f"Sinyal Bulundu: {ticker}")
+                print(f"AL Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
-                
+
+            # 🔴 SAT SİNYALİ KOŞULLARI (DÜŞÜŞ / SATIM VARANTI)
+            st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
+            rsi_sell_ok = 32 <= last_1h['RSI'] <= 60
+
+            if st_sell_signal and volume_confirmed and rsi_sell_ok:
+                entry_price = round(last_1h['Close'], 2)
+                stop_loss = round(entry_price * 1.035, 2)  # Düşüş Yönlü %3.5 Stop-Loss
+                take_profit = round(entry_price * 0.93, 2)  # Düşüş Yönlü %7 Hedef
+
+                message = (
+                    f"🔴 *BİST 100 - 1H SAT SİNYALİ (SATIM VARANTI)*\n\n"
+                    f"📌 **Hisse:** `{ticker}`\n"
+                    f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
+                    f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
+                    f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
+                    f"📊 *Filtreler:* 1H Supertrend YENİ SAT + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
+                )
+                print(f"SAT Sinyali Bulundu: {ticker}")
+                send_telegram_message(message)
+
         except Exception as e:
             print(f"{ticker} işlenirken hata oluştu: {e}")
 
