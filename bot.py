@@ -35,7 +35,7 @@ HISSELER = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
     "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", "CANTE.IS", "CCOLA.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS",
-    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", 
+    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS",
     "FROTO.IS", "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS",
     "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KRDMD.IS", "KSTUR.IS",
     "LMKDC.IS", "MAALT.IS", "MAVI.IS", "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS",
@@ -107,7 +107,7 @@ def calculate_rsi(df, period=14):
 
 # ==================== Tarama Döngüsü ====================
 def scan_markets():
-    print("BIST 100 (1H Grafik - AL/SAT) Taraması Başlatılıyor...")
+    print("BIST 100 (1H Grafik - Anlık AL/SAT) Taraması Başlatılıyor...")
 
     for ticker in HISSELER:
         try:
@@ -124,47 +124,48 @@ def scan_markets():
             data_1h['RSI'] = calculate_rsi(data_1h)
             data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
 
+            # Son kesinleşmiş mumu alıyoruz (Tam kırılım anı)
             last_1h = data_1h.iloc[-1]
             prev_1h = data_1h.iloc[-2]
 
-            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20'] # Hacim Onayı
+            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
 
-            # 🟢 AL SİNYALİ KOŞULLARI
+            # 🟢 YENİ AL SİNYALİ (Kırılım Anı)
             st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
             rsi_buy_ok = 40 <= last_1h['RSI'] <= 68
 
             if st_buy_signal and volume_confirmed and rsi_buy_ok:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop-Loss
-                take_profit = round(entry_price * 1.07, 2)   # %7 Take-Profit
+                stop_loss = round(entry_price * 0.965, 2)   # Beklenen %3.5 Stop
+                take_profit = round(entry_price * 1.07, 2)   # Beklenen %7 Kar Hedefi
 
                 message = (
-                    f"🟢 *BİST 100 - 1H AL SİNYALİ (ALIM VARANTI)*\n\n"
+                    f"🟢 *YENİ AL SİNYALİ (ALIM VARANTI)*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
-                    f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
-                    f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
-                    f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
-                    f"📊 *Filtreler:* 1H Supertrend YENİ AL + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
+                    f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                    f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
+                    f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
+                    f"📊 *Filtreler:* Supertrend 1H YENİ Kırılım + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
                 )
                 print(f"AL Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
 
-            # 🔴 SAT SİNYALİ KOŞULLARI (DÜŞÜŞ / SATIM VARANTI)
+            # 🔴 YENİ SAT SİNYALİ (Kırılım Anı)
             st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
             rsi_sell_ok = 32 <= last_1h['RSI'] <= 60
 
             if st_sell_signal and volume_confirmed and rsi_sell_ok:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 1.035, 2)  # Düşüş Yönlü %3.5 Stop-Loss
-                take_profit = round(entry_price * 0.93, 2)  # Düşüş Yönlü %7 Hedef
+                stop_loss = round(entry_price * 1.035, 2)  # Beklenen %3.5 Stop
+                take_profit = round(entry_price * 0.93, 2)  # Beklenen %7 Düşüş Hedefi
 
                 message = (
-                    f"🔴 *BİST 100 - 1H SAT SİNYALİ (SATIM VARANTI)*\n\n"
+                    f"🔴 *YENİ SAT SİNYALİ (SATIM VARANTI)*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
-                    f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
-                    f"🛑 **Stop-Loss (%3.5):** `{stop_loss} TL`\n"
-                    f"🎯 **Hedef (Take-Profit %7):** `{take_profit} TL`\n\n"
-                    f"📊 *Filtreler:* 1H Supertrend YENİ SAT + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
+                    f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                    f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
+                    f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
+                    f"📊 *Filtreler:* Supertrend 1H YENİ SAT Kırılımı + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
                 )
                 print(f"SAT Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
