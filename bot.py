@@ -11,7 +11,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST 100 1H Güvenli Scanner Bot is Running!")
+        # Türkçe karakter kaldırıldı (Guvenli)
+        self.wfile.write(b"BIST 100 1H Guvenli Scanner Bot is Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -111,7 +112,6 @@ def scan_markets():
 
     for ticker in HISSELER:
         try:
-            # EMA200 için yeterli geçmiş veri almak adına 100 günlük 1 saatlik veri çekiyoruz
             data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
             
             if data_1h.empty or len(data_1h) < 200:
@@ -124,7 +124,7 @@ def scan_markets():
             data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
             data_1h['RSI'] = calculate_rsi(data_1h)
             data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
-            data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean() # Uzun Vadeli Trend Filtresi
+            data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
 
             last_1h = data_1h.iloc[-1]
             prev_1h = data_1h.iloc[-2]
@@ -132,21 +132,21 @@ def scan_markets():
             # Ortak Filtreler
             volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
             
-            # Gün içi aşırı primlenme kontrolü (Dibin %4.5 üzerinde olan hisseleri engelleme)
+            # Gün içi aşırı primlenme kontrolü (%4.5 sınırı)
             low_price = last_1h['Low']
             close_price = last_1h['Close']
             price_change_from_low = ((close_price - low_price) / low_price) * 100
             not_overbought_today = price_change_from_low <= 4.5
 
-            # 🟢 YENİ GÜVENLİ AL SİNYALİ KOŞULLARI
+            # 🟢 GÜVENLİ AL SİNYALİ
             st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-            ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']  # Fiyat EMA200 üzerinde olmalı
-            rsi_buy_ok = 40 <= last_1h['RSI'] <= 60               # Doyuma ulaşmamış ideal bölge
+            ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
+            rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
 
             if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop
-                take_profit = round(entry_price * 1.07, 2)   # %7 Kar Hedefi
+                stop_loss = round(entry_price * 0.965, 2)
+                take_profit = round(entry_price * 1.07, 2)
 
                 message = (
                     f"🟢 *GÜVENLİ AL SİNYALİ (ALIM VARANTI)*\n\n"
@@ -159,15 +159,15 @@ def scan_markets():
                 print(f"Güvenli AL Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
 
-            # 🔴 YENİ GÜVENLİ SAT SİNYALİ KOŞULLARI
+            # 🔴 GÜVENLİ SAT SİNYALİ
             st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-            ema200_sell_ok = last_1h['Close'] < last_1h['EMA200'] # Fiyat EMA200 altında olmalı
-            rsi_sell_ok = 32 <= last_1h['RSI'] <= 55              # Düşüş trendi bölgesi
+            ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
+            rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
 
             if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 1.035, 2)  # %3.5 Stop
-                take_profit = round(entry_price * 0.93, 2)  # %7 Düşüş Hedefi
+                stop_loss = round(entry_price * 1.035, 2)
+                take_profit = round(entry_price * 0.93, 2)
 
                 message = (
                     f"🔴 *GÜVENLİ SAT SİNYALİ (SATIM VARANTI)*\n\n"
