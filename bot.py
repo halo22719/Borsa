@@ -11,7 +11,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST 100 1H Scanner Bot (AL/SAT) is Running!")
+        self.wfile.write(b"BIST 100 1H Güvenli Scanner Bot is Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -107,13 +107,14 @@ def calculate_rsi(df, period=14):
 
 # ==================== Tarama Döngüsü ====================
 def scan_markets():
-    print("BIST 100 (1H Grafik - Anlık AL/SAT) Taraması Başlatılıyor...")
+    print("BIST 100 (1H Güvenlik Filtreli AL/SAT) Taraması Başlatılıyor...")
 
     for ticker in HISSELER:
         try:
-            data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
+            # EMA200 için yeterli geçmiş veri almak adına 100 günlük 1 saatlik veri çekiyoruz
+            data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
             
-            if data_1h.empty or len(data_1h) < 50:
+            if data_1h.empty or len(data_1h) < 200:
                 continue
                 
             if isinstance(data_1h.columns, pd.MultiIndex):
@@ -123,51 +124,60 @@ def scan_markets():
             data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
             data_1h['RSI'] = calculate_rsi(data_1h)
             data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
+            data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean() # Uzun Vadeli Trend Filtresi
 
-            # Son kesinleşmiş mumu alıyoruz (Tam kırılım anı)
             last_1h = data_1h.iloc[-1]
             prev_1h = data_1h.iloc[-2]
 
+            # Ortak Filtreler
             volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
+            
+            # Gün içi aşırı primlenme kontrolü (Dibin %4.5 üzerinde olan hisseleri engelleme)
+            low_price = last_1h['Low']
+            close_price = last_1h['Close']
+            price_change_from_low = ((close_price - low_price) / low_price) * 100
+            not_overbought_today = price_change_from_low <= 4.5
 
-            # 🟢 YENİ AL SİNYALİ (Kırılım Anı)
+            # 🟢 YENİ GÜVENLİ AL SİNYALİ KOŞULLARI
             st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-            rsi_buy_ok = 40 <= last_1h['RSI'] <= 68
+            ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']  # Fiyat EMA200 üzerinde olmalı
+            rsi_buy_ok = 40 <= last_1h['RSI'] <= 60               # Doyuma ulaşmamış ideal bölge
 
-            if st_buy_signal and volume_confirmed and rsi_buy_ok:
+            if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 0.965, 2)   # Beklenen %3.5 Stop
-                take_profit = round(entry_price * 1.07, 2)   # Beklenen %7 Kar Hedefi
+                stop_loss = round(entry_price * 0.965, 2)   # %3.5 Stop
+                take_profit = round(entry_price * 1.07, 2)   # %7 Kar Hedefi
 
                 message = (
-                    f"🟢 *YENİ AL SİNYALİ (ALIM VARANTI)*\n\n"
+                    f"🟢 *GÜVENLİ AL SİNYALİ (ALIM VARANTI)*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
                     f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
                     f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
                     f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
-                    f"📊 *Filtreler:* Supertrend 1H YENİ Kırılım + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
+                    f"📊 *Filtreler:* 1H Supertrend Kırılımı + EMA200 Trend Onayı + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
                 )
-                print(f"AL Sinyali Bulundu: {ticker}")
+                print(f"Güvenli AL Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
 
-            # 🔴 YENİ SAT SİNYALİ (Kırılım Anı)
+            # 🔴 YENİ GÜVENLİ SAT SİNYALİ KOŞULLARI
             st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-            rsi_sell_ok = 32 <= last_1h['RSI'] <= 60
+            ema200_sell_ok = last_1h['Close'] < last_1h['EMA200'] # Fiyat EMA200 altında olmalı
+            rsi_sell_ok = 32 <= last_1h['RSI'] <= 55              # Düşüş trendi bölgesi
 
-            if st_sell_signal and volume_confirmed and rsi_sell_ok:
+            if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
                 entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 1.035, 2)  # Beklenen %3.5 Stop
-                take_profit = round(entry_price * 0.93, 2)  # Beklenen %7 Düşüş Hedefi
+                stop_loss = round(entry_price * 1.035, 2)  # %3.5 Stop
+                take_profit = round(entry_price * 0.93, 2)  # %7 Düşüş Hedefi
 
                 message = (
-                    f"🔴 *YENİ SAT SİNYALİ (SATIM VARANTI)*\n\n"
+                    f"🔴 *GÜVENLİ SAT SİNYALİ (SATIM VARANTI)*\n\n"
                     f"📌 **Hisse:** `{ticker}`\n"
                     f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
                     f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
                     f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
-                    f"📊 *Filtreler:* Supertrend 1H YENİ SAT Kırılımı + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
+                    f"📊 *Filtreler:* 1H Supertrend SAT Kırılımı + EMA200 Altı Düşüş Trendi + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
                 )
-                print(f"SAT Sinyali Bulundu: {ticker}")
+                print(f"Güvenli SAT Sinyali Bulundu: {ticker}")
                 send_telegram_message(message)
 
         except Exception as e:
