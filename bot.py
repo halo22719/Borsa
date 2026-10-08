@@ -11,7 +11,8 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST ve Kripto Dual Bot Çalışıyor!")
+        # Türkçe karakterler ASCII formatına uygun hale getirildi (Calisiyor!)
+        self.wfile.write(b"BIST ve Kripto Dual Bot Calisiyor!")
 
     def do_HEAD(self):
         self.send_response(200)
