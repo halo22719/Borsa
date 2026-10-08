@@ -1,10 +1,14 @@
 import os
 import time
+import logging
 import requests
 import pandas as pd
 import yfinance as yf
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+
+# Yahoo Finance gereksiz log/warning çıktılarını gizleme
+logging.getLogger('yfinance').setLevel(logging.CRITICAL)
 
 # ==================== Mini Web Sunucusu (Render Keep-Alive) ====================
 class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
@@ -29,7 +33,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
 
-# BIST Hisseleri (KOZAL, KOZAA, EUREK çıkarılmış)
+# BIST Hisseleri
 BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
@@ -43,7 +47,7 @@ BIST_HISSELERI = [
     "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
 ]
 
-# Kripto Pariteleri (USD Uyumlu)
+# Kripto Pariteleri (Standart Yahoo Çiftleri)
 KRIPTO_PARITELERI = [
     "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "AVAX-USD", "DOGE-USD", 
     "ADA-USD", "DOT-USD", "LINK-USD", "LTC-USD", "SHIB-USD", "PEPE-USD", 
@@ -59,7 +63,7 @@ def send_telegram_message(message):
     try:
         requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Telegram mesaji gonderilemedi: {e}")
+        pass
 
 # ==================== İndikatör Hesaplamaları ====================
 def calculate_supertrend(df, period=10, multiplier=3):
@@ -114,9 +118,8 @@ def calculate_rsi(df, period=14):
     return 100 - (100 / (1 + rs))
 
 def clean_data(df):
-    """MultiIndex veya uyumsuz sütun isimlerini temizler"""
-    if df.empty:
-        return df
+    if df is None or df.empty:
+        return pd.DataFrame()
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
     df = df.loc[:, ~df.columns.duplicated()]
@@ -128,10 +131,10 @@ def scan_bist():
         print("--- BIST Taramasi Baslatiliyor ---")
         for ticker in BIST_HISSELERI:
             try:
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
                 data_1h = clean_data(data_1h)
                 
-                if data_1h.empty or len(data_1h) < 200 or 'Close' not in data_1h.columns:
+                if data_1h.empty or len(data_1h) < 100 or 'Close' not in data_1h.columns:
                     continue
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
@@ -143,7 +146,6 @@ def scan_bist():
                 prev_1h = data_1h.iloc[-2]
 
                 volume_confirmed = bool(last_1h['Volume'] > last_1h['Vol_SMA20'])
-                
                 low_price = float(last_1h['Low'])
                 close_price = float(last_1h['Close'])
                 price_change_from_low = ((close_price - low_price) / low_price) * 100
@@ -187,21 +189,22 @@ def scan_bist():
                     )
                     send_telegram_message(message)
 
-            except Exception as e:
-                print(f"BIST {ticker} hatasi atlandi: {e}")
+            except Exception:
+                pass
         
         time.sleep(3600)
 
 # ==================== KRİPTO TARAMA DÖNGÜSÜ ====================
 def scan_kripto():
     while True:
-        print("--- Midas Kripto Taramasi Baslatiliyor ---")
+        print("--- Kripto Taramasi Baslatiliyor ---")
         for ticker in KRIPTO_PARITELERI:
             try:
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                # Kriptolar için periyot 60d çekilerek Yahoo limitlerine takılması engellendi
+                data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
                 data_1h = clean_data(data_1h)
 
-                if data_1h.empty or len(data_1h) < 200 or 'Close' not in data_1h.columns:
+                if data_1h.empty or len(data_1h) < 100 or 'Close' not in data_1h.columns:
                     continue
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
@@ -231,8 +234,7 @@ def scan_kripto():
                         f"💰 **Sinyal/Giriş Fiyatı:** `${entry_price}`\n"
                         f"🎯 **Satış/Hedef Fiyat (+%7):** `${take_profit}`\n"
                         f"🛑 **Stop-Loss (-%3.5):** `${stop_loss}`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})\n"
-                        f"💡 *Not:* Midas üzerinde ilgili coinin TL paritesinden işlem yapabilirsiniz."
+                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
                     )
                     send_telegram_message(message)
 
@@ -256,8 +258,8 @@ def scan_kripto():
                     )
                     send_telegram_message(message)
 
-            except Exception as e:
-                print(f"Kripto {ticker} hatasi atlandi: {e}")
+            except Exception:
+                pass
 
         time.sleep(3600)
 
