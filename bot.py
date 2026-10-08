@@ -11,8 +11,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        # Türkçe karakter kaldırıldı (Guvenli)
-        self.wfile.write(b"BIST 100 1H Guvenli Scanner Bot is Running!")
+        self.wfile.write(b"BIST 100 ve Midas Kripto Dual Scanner Bot Running!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -24,26 +23,37 @@ def run_web_server():
     print(f"Web sunucusu {port} portunda başlatıldı.")
     server.serve_forever()
 
-# Web sunucusunu arka planda çalıştır
+# Web sunucusunu arka planda başlat
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # ==================== Bot Ayarları ====================
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
 
-# BIST 100 Hisselerinin Tamamı (.IS uzantılı)
-HISSELER = [
+# BIST Hisseleri (KOZAL, KOZAA ve EUREK Çıkarıldı)
+BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
     "BIOEN.IS", "BOBET.IS", "BRSAN.IS", "BRYAT.IS", "BUCIM.IS", "CANTE.IS", "CCOLA.IS", "CIMSA.IS", "CWENE.IS", "DOAS.IS",
-    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS",
-    "FROTO.IS", "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS",
-    "KAYSE.IS", "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KRDMD.IS", "KSTUR.IS",
-    "LMKDC.IS", "MAALT.IS", "MAVI.IS", "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS",
-    "OYAKC.IS", "PASEU.IS", "PETKM.IS", "PGSUS.IS", "PLTUR.IS", "PSGYO.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS",
-    "SISE.IS", "SKBNK.IS", "SMRTG.IS", "SOKM.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TMSN.IS", "TOASO.IS",
-    "TSKB.IS", "TTKOM.IS", "TTRAK.IS", "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS",
-    "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
+    "DOHOL.IS", "ECILC.IS", "ECZYT.IS", "EGEEN.IS", "EKGYO.IS", "ENJSA.IS", "ENKAI.IS", "EREGL.IS", "EUPWR.IS", "FROTO.IS",
+    "GARAN.IS", "GESAN.IS", "GUBRF.IS", "HALKB.IS", "HEKTS.IS", "ISCTR.IS", "ISGYO.IS", "ISMEN.IS", "IZENR.IS", "KAYSE.IS",
+    "KCAER.IS", "KCHOL.IS", "KLSER.IS", "KONTR.IS", "KORDS.IS", "KRDMD.IS", "KSTUR.IS", "LMKDC.IS", "MAALT.IS", "MAVI.IS",
+    "MHRGY.IS", "MIATK.IS", "MGROS.IS", "MPARK.IS", "ODAS.IS", "OTKAR.IS", "OYYAT.IS", "OYAKC.IS", "PASEU.IS", "PETKM.IS",
+    "PGSUS.IS", "PLTUR.IS", "PSGYO.IS", "REEDR.IS", "SAHOL.IS", "SASA.IS", "SDTTR.IS", "SISE.IS", "SKBNK.IS", "SMRTG.IS",
+    "SOKM.IS", "TAVHL.IS", "TCELL.IS", "THYAO.IS", "TKFEN.IS", "TMSN.IS", "TOASO.IS", "TSKB.IS", "TTKOM.IS", "TTRAK.IS",
+    "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
+]
+
+# Midas Kripto TL Pariteleri
+KRIPTO_PARITELERI = [
+    "BTC-TRY", "ETH-TRY", "SOL-TRY", "XRP-TRY", "AVAX-TRY", "DOGE-TRY", 
+    "ADA-TRY", "DOT-TRY", "LINK-TRY", "LTC-TRY", "SHIB-TRY", "PEPE-TRY", 
+    "NEAR-TRY", "APT-TRY", "TRX-TRY", "BCH-TRY", "UNI-TRY", "ALGO-TRY", 
+    "ATOM-TRY", "FIL-TRY", "ETC-TRY", "XLM-TRY", "INJ-TRY", "FET-TRY", 
+    "RNDR-TRY", "STX-TRY", "TIA-TRY", "SUI-TRY", "OP-TRY", "ARB-TRY", 
+    "GRT-TRY", "AAVE-TRY", "SAND-TRY", "MANA-TRY", "GALA-TRY", "THETA-TRY", 
+    "FTM-TRY", "EGLD-TRY", "KSM-TRY", "AXS-TRY", "CHZ-TRY", "HOT-TRY", 
+    "DENT-TRY", "FLOKI-TRY", "BONK-TRY", "WIF-TRY", "JUP-TRY", "SEI-TRY"
 ]
 
 def send_telegram_message(message):
@@ -106,85 +116,156 @@ def calculate_rsi(df, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ==================== Tarama Döngüsü ====================
-def scan_markets():
-    print("BIST 100 (1H Güvenlik Filtreli AL/SAT) Taraması Başlatılıyor...")
-
-    for ticker in HISSELER:
-        try:
-            data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
-            
-            if data_1h.empty or len(data_1h) < 200:
-                continue
-                
-            if isinstance(data_1h.columns, pd.MultiIndex):
-                data_1h.columns = data_1h.columns.get_level_values(0)
-
-            # İndikatör Hesaplamaları
-            data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
-            data_1h['RSI'] = calculate_rsi(data_1h)
-            data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
-            data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
-
-            last_1h = data_1h.iloc[-1]
-            prev_1h = data_1h.iloc[-2]
-
-            # Ortak Filtreler
-            volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
-            
-            # Gün içi aşırı primlenme kontrolü (%4.5 sınırı)
-            low_price = last_1h['Low']
-            close_price = last_1h['Close']
-            price_change_from_low = ((close_price - low_price) / low_price) * 100
-            not_overbought_today = price_change_from_low <= 4.5
-
-            # 🟢 GÜVENLİ AL SİNYALİ
-            st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-            ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
-            rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
-
-            if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
-                entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 0.965, 2)
-                take_profit = round(entry_price * 1.07, 2)
-
-                message = (
-                    f"🟢 *GÜVENLİ AL SİNYALİ (ALIM VARANTI)*\n\n"
-                    f"📌 **Hisse:** `{ticker}`\n"
-                    f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
-                    f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
-                    f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
-                    f"📊 *Filtreler:* 1H Supertrend Kırılımı + EMA200 Trend Onayı + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
-                )
-                print(f"Güvenli AL Sinyali Bulundu: {ticker}")
-                send_telegram_message(message)
-
-            # 🔴 GÜVENLİ SAT SİNYALİ
-            st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-            ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
-            rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
-
-            if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                entry_price = round(last_1h['Close'], 2)
-                stop_loss = round(entry_price * 1.035, 2)
-                take_profit = round(entry_price * 0.93, 2)
-
-                message = (
-                    f"🔴 *GÜVENLİ SAT SİNYALİ (SATIM VARANTI)*\n\n"
-                    f"📌 **Hisse:** `{ticker}`\n"
-                    f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
-                    f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
-                    f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
-                    f"📊 *Filtreler:* 1H Supertrend SAT Kırılımı + EMA200 Altı Düşüş Trendi + Hacim Onaylı + RSI ({round(last_1h['RSI'],1)})"
-                )
-                print(f"Güvenli SAT Sinyali Bulundu: {ticker}")
-                send_telegram_message(message)
-
-        except Exception as e:
-            print(f"{ticker} işlenirken hata oluştu: {e}")
-
-# ==================== Ana Çalıştırma Döngüsü ====================
-if __name__ == "__main__":
+# ==================== BİST TARAMA DÖNGÜSÜ ====================
+def scan_bist():
     while True:
-        scan_markets()
+        print("--- BIST Taraması Başlatılıyor ---")
+        for ticker in BIST_HISSELERI:
+            try:
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                if data_1h.empty or len(data_1h) < 200:
+                    continue
+                if isinstance(data_1h.columns, pd.MultiIndex):
+                    data_1h.columns = data_1h.columns.get_level_values(0)
+
+                data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
+                data_1h['RSI'] = calculate_rsi(data_1h)
+                data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
+                data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
+
+                last_1h = data_1h.iloc[-1]
+                prev_1h = data_1h.iloc[-2]
+
+                volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
+                
+                # Gün içi aşırı primlenme kontrolü (%4.5 sınırı)
+                low_price = last_1h['Low']
+                close_price = last_1h['Close']
+                price_change_from_low = ((close_price - low_price) / low_price) * 100
+                not_overbought_today = price_change_from_low <= 4.5
+
+                # 🟢 BİST AL SİNYALİ
+                st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
+                ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
+                rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
+
+                if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
+                    entry_price = round(last_1h['Close'], 2)
+                    stop_loss = round(entry_price * 0.965, 2)
+                    take_profit = round(entry_price * 1.07, 2)
+
+                    message = (
+                        f"🟢 *BİST - GÜVENLİ AL SİNYALİ*\n\n"
+                        f"📌 **Hisse:** `{ticker}`\n"
+                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                        f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
+                        f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
+                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                    )
+                    print(f"BİST AL Sinyali: {ticker}")
+                    send_telegram_message(message)
+
+                # 🔴 BİST SAT SİNYALİ
+                st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
+                ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
+                rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
+
+                if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
+                    entry_price = round(last_1h['Close'], 2)
+                    stop_loss = round(entry_price * 1.035, 2)
+                    take_profit = round(entry_price * 0.93, 2)
+
+                    message = (
+                        f"🔴 *BİST - GÜVENLİ SAT SİNYALİ*\n\n"
+                        f"📌 **Hisse:** `{ticker}`\n"
+                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                        f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
+                        f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
+                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                    )
+                    print(f"BİST SAT Sinyali: {ticker}")
+                    send_telegram_message(message)
+
+            except Exception as e:
+                print(f"BİST {ticker} hatası: {e}")
+        
         time.sleep(3600)
+
+# ==================== KRİPTO TARAMA DÖNGÜSÜ ====================
+def scan_kripto():
+    while True:
+        print("--- Midas Kripto Taraması Başlatılıyor ---")
+        for ticker in KRIPTO_PARITELERI:
+            try:
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                if data_1h.empty or len(data_1h) < 200:
+                    continue
+                if isinstance(data_1h.columns, pd.MultiIndex):
+                    data_1h.columns = data_1h.columns.get_level_values(0)
+
+                data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
+                data_1h['RSI'] = calculate_rsi(data_1h)
+                data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
+                data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
+
+                last_1h = data_1h.iloc[-1]
+                prev_1h = data_1h.iloc[-2]
+
+                volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
+
+                # 🟢 KRİPTO AL SİNYALİ
+                st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
+                ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
+                rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
+
+                if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok:
+                    entry_price = round(last_1h['Close'], 4) if last_1h['Close'] < 1 else round(last_1h['Close'], 2)
+                    stop_loss = round(entry_price * 0.965, 4 if entry_price < 1 else 2)
+                    take_profit = round(entry_price * 1.07, 4 if entry_price < 1 else 2)
+                    coin_name = ticker.replace("-TRY", " TL")
+
+                    message = (
+                        f"🟢 *MIDAS KRİPTO - GÜVENLİ AL SİNYALİ*\n\n"
+                        f"📌 **Varlık:** `{coin_name}`\n"
+                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                        f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
+                        f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
+                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                    )
+                    print(f"Kripto AL Sinyali: {ticker}")
+                    send_telegram_message(message)
+
+                # 🔴 KRİPTO SAT SİNYALİ
+                st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
+                ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
+                rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
+
+                if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
+                    entry_price = round(last_1h['Close'], 4) if last_1h['Close'] < 1 else round(last_1h['Close'], 2)
+                    stop_loss = round(entry_price * 1.035, 4 if entry_price < 1 else 2)
+                    take_profit = round(entry_price * 0.93, 4 if entry_price < 1 else 2)
+                    coin_name = ticker.replace("-TRY", " TL")
+
+                    message = (
+                        f"🔴 *MIDAS KRİPTO - DÜŞÜŞ / NAKİTE GEÇ*\n\n"
+                        f"📌 **Varlık:** `{coin_name}`\n"
+                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
+                        f"🛑 **Stop / Çıkış Seviyesi:** `{stop_loss} TL`\n"
+                        f"📉 **Düşüş Hedefi (-%7):** `{take_profit} TL`\n\n"
+                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                    )
+                    print(f"Kripto SAT Sinyali: {ticker}")
+                    send_telegram_message(message)
+
+            except Exception as e:
+                print(f"Kripto {ticker} hatası: {e}")
+
+        time.sleep(3600)
+
+# ==================== Ana Çalıştırma ====================
+if __name__ == "__main__":
+    threading.Thread(target=scan_bist, daemon=True).start()
+    threading.Thread(target=scan_kripto, daemon=True).start()
+
+    while True:
+        time.sleep(60)
