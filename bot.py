@@ -11,7 +11,6 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        # Türkçe karakterler ASCII formatına uygun hale getirildi (Calisiyor!)
         self.wfile.write(b"BIST ve Kripto Dual Bot Calisiyor!")
 
     def do_HEAD(self):
@@ -30,7 +29,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
 
-# BIST Hisseleri
+# BIST Hisseleri (KOZAL, KOZAA, EUREK çıkarılmış)
 BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
@@ -44,7 +43,7 @@ BIST_HISSELERI = [
     "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
 ]
 
-# Kripto Pariteleri (Yahoo Finance Tam Uyumlu USD Pariteleri)
+# Kripto Pariteleri (USD Uyumlu)
 KRIPTO_PARITELERI = [
     "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "AVAX-USD", "DOGE-USD", 
     "ADA-USD", "DOT-USD", "LINK-USD", "LTC-USD", "SHIB-USD", "PEPE-USD", 
@@ -120,11 +119,10 @@ def scan_bist():
         print("--- BIST Taraması Başlatılıyor ---")
         for ticker in BIST_HISSELERI:
             try:
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                # multi_level_index=False parametresi ile kolon yapısı düzeltildi
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False, multi_level_index=False)
                 if data_1h.empty or len(data_1h) < 200:
                     continue
-                if isinstance(data_1h.columns, pd.MultiIndex):
-                    data_1h.columns = data_1h.columns.get_level_values(0)
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
                 data_1h['RSI'] = calculate_rsi(data_1h)
@@ -146,7 +144,7 @@ def scan_bist():
                 rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
 
                 if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
-                    entry_price = round(last_1h['Close'], 2)
+                    entry_price = round(float(last_1h['Close']), 2)
                     stop_loss = round(entry_price * 0.965, 2)
                     take_profit = round(entry_price * 1.07, 2)
 
@@ -156,7 +154,7 @@ def scan_bist():
                         f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
                         f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
                         f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
                     )
                     send_telegram_message(message)
 
@@ -165,7 +163,7 @@ def scan_bist():
                 rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
 
                 if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    entry_price = round(last_1h['Close'], 2)
+                    entry_price = round(float(last_1h['Close']), 2)
                     stop_loss = round(entry_price * 1.035, 2)
                     take_profit = round(entry_price * 0.93, 2)
 
@@ -175,7 +173,7 @@ def scan_bist():
                         f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
                         f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
                         f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
                     )
                     send_telegram_message(message)
 
@@ -190,11 +188,10 @@ def scan_kripto():
         print("--- Midas Kripto Taraması Başlatılıyor ---")
         for ticker in KRIPTO_PARITELERI:
             try:
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                # multi_level_index=False parametresi ile kolon yapısı düzeltildi
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False, multi_level_index=False)
                 if data_1h.empty or len(data_1h) < 200:
                     continue
-                if isinstance(data_1h.columns, pd.MultiIndex):
-                    data_1h.columns = data_1h.columns.get_level_values(0)
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
                 data_1h['RSI'] = calculate_rsi(data_1h)
@@ -211,7 +208,8 @@ def scan_kripto():
                 rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
 
                 if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok:
-                    entry_price = round(last_1h['Close'], 4) if last_1h['Close'] < 1 else round(last_1h['Close'], 2)
+                    raw_price = float(last_1h['Close'])
+                    entry_price = round(raw_price, 4) if raw_price < 1 else round(raw_price, 2)
                     stop_loss = round(entry_price * 0.965, 4 if entry_price < 1 else 2)
                     take_profit = round(entry_price * 1.07, 4 if entry_price < 1 else 2)
                     coin_name = ticker.replace("-USD", "")
@@ -222,7 +220,7 @@ def scan_kripto():
                         f"💰 **Sinyal/Giriş Fiyatı:** `${entry_price}`\n"
                         f"🎯 **Satış/Hedef Fiyat (+%7):** `${take_profit}`\n"
                         f"🛑 **Stop-Loss (-%3.5):** `${stop_loss}`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(last_1h['RSI'],1)})\n"
+                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})\n"
                         f"💡 *Not:* Midas üzerinde ilgili coinin TL paritesinden işlem yapabilirsiniz."
                     )
                     send_telegram_message(message)
@@ -232,7 +230,8 @@ def scan_kripto():
                 rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
 
                 if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    entry_price = round(last_1h['Close'], 4) if last_1h['Close'] < 1 else round(last_1h['Close'], 2)
+                    raw_price = float(last_1h['Close'])
+                    entry_price = round(raw_price, 4) if raw_price < 1 else round(raw_price, 2)
                     stop_loss = round(entry_price * 1.035, 4 if entry_price < 1 else 2)
                     take_profit = round(entry_price * 0.93, 4 if entry_price < 1 else 2)
                     coin_name = ticker.replace("-USD", "")
@@ -243,7 +242,7 @@ def scan_kripto():
                         f"💰 **Sinyal/Giriş Fiyatı:** `${entry_price}`\n"
                         f"🛑 **Stop / Çıkış Seviyesi:** `${stop_loss}`\n"
                         f"📉 **Düşüş Hedefi (-%7):** `${take_profit}`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(last_1h['RSI'],1)})"
+                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
                     )
                     send_telegram_message(message)
 
