@@ -20,7 +20,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
 def run_web_server():
     port = int(os.environ.get("PORT", 8080))
     server = HTTPServer(('0.0.0.0', port), SimpleHTTPRequestHandler)
-    print(f"Web sunucusu {port} portunda başlatıldı.")
+    print(f"Web sunucusu {port} portunda baslatildi.")
     server.serve_forever()
 
 threading.Thread(target=run_web_server, daemon=True).start()
@@ -57,9 +57,9 @@ def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
-        requests.post(url, json=payload)
+        requests.post(url, json=payload, timeout=10)
     except Exception as e:
-        print(f"Telegram mesajı gönderilemedi: {e}")
+        print(f"Telegram mesaji gonderilemedi: {e}")
 
 # ==================== İndikatör Hesaplamaları ====================
 def calculate_supertrend(df, period=10, multiplier=3):
@@ -113,15 +113,25 @@ def calculate_rsi(df, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+def clean_data(df):
+    """MultiIndex veya uyumsuz sütun isimlerini temizler"""
+    if df.empty:
+        return df
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    df = df.loc[:, ~df.columns.duplicated()]
+    return df
+
 # ==================== BİST TARAMA DÖNGÜSÜ ====================
 def scan_bist():
     while True:
-        print("--- BIST Taraması Başlatılıyor ---")
+        print("--- BIST Taramasi Baslatiliyor ---")
         for ticker in BIST_HISSELERI:
             try:
-                # multi_level_index=False parametresi ile kolon yapısı düzeltildi
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False, multi_level_index=False)
-                if data_1h.empty or len(data_1h) < 200:
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                data_1h = clean_data(data_1h)
+                
+                if data_1h.empty or len(data_1h) < 200 or 'Close' not in data_1h.columns:
                     continue
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
@@ -132,19 +142,19 @@ def scan_bist():
                 last_1h = data_1h.iloc[-1]
                 prev_1h = data_1h.iloc[-2]
 
-                volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
+                volume_confirmed = bool(last_1h['Volume'] > last_1h['Vol_SMA20'])
                 
-                low_price = last_1h['Low']
-                close_price = last_1h['Close']
+                low_price = float(last_1h['Low'])
+                close_price = float(last_1h['Close'])
                 price_change_from_low = ((close_price - low_price) / low_price) * 100
                 not_overbought_today = price_change_from_low <= 4.5
 
                 st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-                ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
-                rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
+                ema200_buy_ok = close_price > float(last_1h['EMA200'])
+                rsi_buy_ok = 40 <= float(last_1h['RSI']) <= 60
 
                 if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
-                    entry_price = round(float(last_1h['Close']), 2)
+                    entry_price = round(close_price, 2)
                     stop_loss = round(entry_price * 0.965, 2)
                     take_profit = round(entry_price * 1.07, 2)
 
@@ -159,11 +169,11 @@ def scan_bist():
                     send_telegram_message(message)
 
                 st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-                ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
-                rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
+                ema200_sell_ok = close_price < float(last_1h['EMA200'])
+                rsi_sell_ok = 32 <= float(last_1h['RSI']) <= 55
 
                 if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    entry_price = round(float(last_1h['Close']), 2)
+                    entry_price = round(close_price, 2)
                     stop_loss = round(entry_price * 1.035, 2)
                     take_profit = round(entry_price * 0.93, 2)
 
@@ -178,19 +188,20 @@ def scan_bist():
                     send_telegram_message(message)
 
             except Exception as e:
-                print(f"BİST {ticker} hatası: {e}")
+                print(f"BIST {ticker} hatasi atlandi: {e}")
         
         time.sleep(3600)
 
 # ==================== KRİPTO TARAMA DÖNGÜSÜ ====================
 def scan_kripto():
     while True:
-        print("--- Midas Kripto Taraması Başlatılıyor ---")
+        print("--- Midas Kripto Taramasi Baslatiliyor ---")
         for ticker in KRIPTO_PARITELERI:
             try:
-                # multi_level_index=False parametresi ile kolon yapısı düzeltildi
-                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False, multi_level_index=False)
-                if data_1h.empty or len(data_1h) < 200:
+                data_1h = yf.download(ticker, period="100d", interval="1h", progress=False)
+                data_1h = clean_data(data_1h)
+
+                if data_1h.empty or len(data_1h) < 200 or 'Close' not in data_1h.columns:
                     continue
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
@@ -201,15 +212,15 @@ def scan_kripto():
                 last_1h = data_1h.iloc[-1]
                 prev_1h = data_1h.iloc[-2]
 
-                volume_confirmed = last_1h['Volume'] > last_1h['Vol_SMA20']
+                volume_confirmed = bool(last_1h['Volume'] > last_1h['Vol_SMA20'])
+                close_price = float(last_1h['Close'])
 
                 st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-                ema200_buy_ok = last_1h['Close'] > last_1h['EMA200']
-                rsi_buy_ok = 40 <= last_1h['RSI'] <= 60
+                ema200_buy_ok = close_price > float(last_1h['EMA200'])
+                rsi_buy_ok = 40 <= float(last_1h['RSI']) <= 60
 
                 if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok:
-                    raw_price = float(last_1h['Close'])
-                    entry_price = round(raw_price, 4) if raw_price < 1 else round(raw_price, 2)
+                    entry_price = round(close_price, 4) if close_price < 1 else round(close_price, 2)
                     stop_loss = round(entry_price * 0.965, 4 if entry_price < 1 else 2)
                     take_profit = round(entry_price * 1.07, 4 if entry_price < 1 else 2)
                     coin_name = ticker.replace("-USD", "")
@@ -226,12 +237,11 @@ def scan_kripto():
                     send_telegram_message(message)
 
                 st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-                ema200_sell_ok = last_1h['Close'] < last_1h['EMA200']
-                rsi_sell_ok = 32 <= last_1h['RSI'] <= 55
+                ema200_sell_ok = close_price < float(last_1h['EMA200'])
+                rsi_sell_ok = 32 <= float(last_1h['RSI']) <= 55
 
                 if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    raw_price = float(last_1h['Close'])
-                    entry_price = round(raw_price, 4) if raw_price < 1 else round(raw_price, 2)
+                    entry_price = round(close_price, 4) if close_price < 1 else round(close_price, 2)
                     stop_loss = round(entry_price * 1.035, 4 if entry_price < 1 else 2)
                     take_profit = round(entry_price * 0.93, 4 if entry_price < 1 else 2)
                     coin_name = ticker.replace("-USD", "")
@@ -247,7 +257,7 @@ def scan_kripto():
                     send_telegram_message(message)
 
             except Exception as e:
-                print(f"Kripto {ticker} hatası: {e}")
+                print(f"Kripto {ticker} hatasi atlandi: {e}")
 
         time.sleep(3600)
 
