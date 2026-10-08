@@ -49,11 +49,11 @@ KRIPTO_PARITELERI = [
     "BTC-TRY", "ETH-TRY", "SOL-TRY", "XRP-TRY", "AVAX-TRY", "DOGE-TRY", 
     "ADA-TRY", "DOT-TRY", "LINK-TRY", "LTC-TRY", "SHIB-TRY", "PEPE-TRY", 
     "NEAR-TRY", "APT-TRY", "TRX-TRY", "BCH-TRY", "UNI-TRY", "ALGO-TRY", 
-    "ATOM-TRY", "FIL-TRY", "ETC-TRY", "XLM-TRY", "INJ-TRY", "FET-TRY", 
+    "ATOM-TRY", "FIL-TRY", 
     "RNDR-TRY", "STX-TRY", "TIA-TRY", "SUI-TRY", "OP-TRY", "ARB-TRY", 
-    "GRT-TRY", "AAVE-TRY", "SAND-TRY", "MANA-TRY", "GALA-TRY", "THETA-TRY", 
-    "FTM-TRY", "EGLD-TRY", "KSM-TRY", "AXS-TRY", "CHZ-TRY", "HOT-TRY", 
-    "DENT-TRY", "FLOKI-TRY", "BONK-TRY", "WIF-TRY", "JUP-TRY", "SEI-TRY"
+    "GRT-TRY", "AAVE-TRY", "SAND-TRY", "MANA-TRY", "GALA-TRY",
+    "FTM-TRY", "CHZ-TRY", "HOT-TRY", 
+    "FLOKI-TRY", "BONK-TRY", "WIF-TRY"
 ]
 
 def send_telegram_message(message):
