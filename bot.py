@@ -15,7 +15,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST ve Kripto Dual Bot Calisiyor!")
+        self.wfile.write(b"BIST Bot Calisiyor!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -33,7 +33,7 @@ threading.Thread(target=run_web_server, daemon=True).start()
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
 
-# BIST Hisseleri
+# BIST Hisseleri (KOZAL, KOZAA, EUREK çıkarılmış tam liste)
 BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
@@ -47,22 +47,12 @@ BIST_HISSELERI = [
     "TUKAS.IS", "TUPRS.IS", "ULKER.IS", "VAKBN.IS", "VESBE.IS", "VESTL.IS", "YEOTK.IS", "YKBNK.IS", "YYLGD.IS", "ZOREN.IS"
 ]
 
-# Kripto Pariteleri (Standart Yahoo Çiftleri)
-KRIPTO_PARITELERI = [
-    "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD", "AVAX-USD", "DOGE-USD", 
-    "ADA-USD", "DOT-USD", "LINK-USD", "LTC-USD", "SHIB-USD", "PEPE-USD", 
-    "NEAR-USD", "APT-USD", "TRX-USD", "BCH-USD", "UNI-USD", "ALGO-USD", 
-    "ATOM-USD", "FIL-USD", "STX-USD", "TIA-USD", "SUI-USD", "OP-USD", 
-    "ARB-USD", "GRT-USD", "AAVE-USD", "SAND-USD", "MANA-USD", "GALA-USD", 
-    "FTM-USD", "CHZ-USD", "HOT-USD", "FLOKI-USD", "BONK-USD", "WIF-USD"
-]
-
 def send_telegram_message(message):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     payload = {"chat_id": CHAT_ID, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, json=payload, timeout=10)
-    except Exception as e:
+    except Exception:
         pass
 
 # ==================== İndikatör Hesaplamaları ====================
@@ -131,10 +121,11 @@ def scan_bist():
         print("--- BIST Taramasi Baslatiliyor ---")
         for ticker in BIST_HISSELERI:
             try:
-                data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
+                # RAM tasarrufu için period 30 gün olarak ayarlandı
+                data_1h = yf.download(ticker, period="30d", interval="1h", progress=False)
                 data_1h = clean_data(data_1h)
                 
-                if data_1h.empty or len(data_1h) < 100 or 'Close' not in data_1h.columns:
+                if data_1h.empty or len(data_1h) < 50 or 'Close' not in data_1h.columns:
                     continue
 
                 data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
@@ -194,79 +185,9 @@ def scan_bist():
         
         time.sleep(3600)
 
-# ==================== KRİPTO TARAMA DÖNGÜSÜ ====================
-def scan_kripto():
-    while True:
-        print("--- Kripto Taramasi Baslatiliyor ---")
-        for ticker in KRIPTO_PARITELERI:
-            try:
-                # Kriptolar için periyot 60d çekilerek Yahoo limitlerine takılması engellendi
-                data_1h = yf.download(ticker, period="60d", interval="1h", progress=False)
-                data_1h = clean_data(data_1h)
-
-                if data_1h.empty or len(data_1h) < 100 or 'Close' not in data_1h.columns:
-                    continue
-
-                data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
-                data_1h['RSI'] = calculate_rsi(data_1h)
-                data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
-                data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
-
-                last_1h = data_1h.iloc[-1]
-                prev_1h = data_1h.iloc[-2]
-
-                volume_confirmed = bool(last_1h['Volume'] > last_1h['Vol_SMA20'])
-                close_price = float(last_1h['Close'])
-
-                st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-                ema200_buy_ok = close_price > float(last_1h['EMA200'])
-                rsi_buy_ok = 40 <= float(last_1h['RSI']) <= 60
-
-                if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok:
-                    entry_price = round(close_price, 4) if close_price < 1 else round(close_price, 2)
-                    stop_loss = round(entry_price * 0.965, 4 if entry_price < 1 else 2)
-                    take_profit = round(entry_price * 1.07, 4 if entry_price < 1 else 2)
-                    coin_name = ticker.replace("-USD", "")
-
-                    message = (
-                        f"🟢 *MIDAS KRİPTO - GÜVENLİ AL SİNYALİ*\n\n"
-                        f"📌 **Varlık:** `{coin_name}`\n"
-                        f"💰 **Sinyal/Giriş Fiyatı:** `${entry_price}`\n"
-                        f"🎯 **Satış/Hedef Fiyat (+%7):** `${take_profit}`\n"
-                        f"🛑 **Stop-Loss (-%3.5):** `${stop_loss}`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
-                    )
-                    send_telegram_message(message)
-
-                st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-                ema200_sell_ok = close_price < float(last_1h['EMA200'])
-                rsi_sell_ok = 32 <= float(last_1h['RSI']) <= 55
-
-                if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    entry_price = round(close_price, 4) if close_price < 1 else round(close_price, 2)
-                    stop_loss = round(entry_price * 1.035, 4 if entry_price < 1 else 2)
-                    take_profit = round(entry_price * 0.93, 4 if entry_price < 1 else 2)
-                    coin_name = ticker.replace("-USD", "")
-
-                    message = (
-                        f"🔴 *MIDAS KRİPTO - DÜŞÜŞ / NAKİTE GEÇ*\n\n"
-                        f"📌 **Varlık:** `{coin_name}`\n"
-                        f"💰 **Sinyal/Giriş Fiyatı:** `${entry_price}`\n"
-                        f"🛑 **Stop / Çıkış Seviyesi:** `${stop_loss}`\n"
-                        f"📉 **Düşüş Hedefi (-%7):** `${take_profit}`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
-                    )
-                    send_telegram_message(message)
-
-            except Exception:
-                pass
-
-        time.sleep(3600)
-
 # ==================== Ana Çalıştırma ====================
 if __name__ == "__main__":
     threading.Thread(target=scan_bist, daemon=True).start()
-    threading.Thread(target=scan_kripto, daemon=True).start()
 
     while True:
         time.sleep(60)
