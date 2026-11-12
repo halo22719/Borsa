@@ -6,6 +6,7 @@ import pandas as pd
 import yfinance as yf
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import threading
+from datetime import datetime
 
 # Yahoo Finance gereksiz log/warning çıktılarını gizleme
 logging.getLogger('yfinance').setLevel(logging.CRITICAL)
@@ -15,7 +16,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST Bot Calisiyor!")
+        self.wfile.write(b"BIST Gelismis Bot Calisiyor!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -33,7 +34,6 @@ threading.Thread(target=run_web_server, daemon=True).start()
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
 
-# BIST Hisseleri (KOZAL, KOZAA, EUREK çıkarılmış tam liste)
 BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
     "ALBRK.IS", "ALFAS.IS", "ANSGR.IS", "ARCLK.IS", "ARDYZ.IS", "ASELS.IS", "ASTOR.IS", "BERA.IS", "BIENY.IS", "BIMAS.IS",
@@ -107,6 +107,13 @@ def calculate_rsi(df, period=14):
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
+def calculate_macd(df, fast=12, slow=26, signal=9):
+    exp1 = df['Close'].ewm(span=fast, adjust=False).mean()
+    exp2 = df['Close'].ewm(span=slow, adjust=False).mean()
+    macd_line = exp1 - exp2
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    return macd_line, signal_line
+
 def clean_data(df):
     if df is None or df.empty:
         return pd.DataFrame()
@@ -117,73 +124,85 @@ def clean_data(df):
 
 # ==================== BİST TARAMA DÖNGÜSÜ ====================
 def scan_bist():
+    scanned_count = 0
+    signals_found = 0
+    
     while True:
-        print("--- BIST Taramasi Baslatiliyor ---")
+        print("--- BIST 30M Gelismis Taramasi Baslatiliyor ---")
+        scanned_count = 0
+        signals_found = 0
+        
         for ticker in BIST_HISSELERI:
             try:
-                # RAM tasarrufu için period 30 gün olarak ayarlandı
-                data_1h = yf.download(ticker, period="30d", interval="1h", progress=False)
-                data_1h = clean_data(data_1h)
+                data_30m = yf.download(ticker, period="30d", interval="30m", progress=False)
+                data_30m = clean_data(data_30m)
                 
-                if data_1h.empty or len(data_1h) < 50 or 'Close' not in data_1h.columns:
+                if data_30m.empty or len(data_30m) < 50 or 'Close' not in data_30m.columns:
                     continue
 
-                data_1h['Supertrend'], data_1h['ST_Direction'] = calculate_supertrend(data_1h)
-                data_1h['RSI'] = calculate_rsi(data_1h)
-                data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
-                data_1h['EMA200'] = data_1h['Close'].ewm(span=200, adjust=False).mean()
+                scanned_count += 1
 
-                last_1h = data_1h.iloc[-1]
-                prev_1h = data_1h.iloc[-2]
+                # İndikatörler
+                data_30m['Supertrend'], data_30m['ST_Direction'] = calculate_supertrend(data_30m)
+                data_30m['RSI'] = calculate_rsi(data_30m)
+                data_30m['MACD'], data_30m['MACD_Signal'] = calculate_macd(data_30m)
+                data_30m['Vol_SMA20'] = data_30m['Volume'].rolling(window=20).mean()
+                data_30m['EMA200'] = data_30m['Close'].ewm(span=200, adjust=False).mean()
 
-                volume_confirmed = bool(last_1h['Volume'] > last_1h['Vol_SMA20'])
-                low_price = float(last_1h['Low'])
-                close_price = float(last_1h['Close'])
+                last = data_30m.iloc[-1]
+                prev = data_30m.iloc[-2]
+
+                # Destek ve Direnç Hesaplama (Son 20 barın en yüksek/en düşük seviyeleri)
+                support = round(data_30m['Low'].tail(20).min(), 2)
+                resistance = round(data_30m['High'].tail(20).max(), 2)
+
+                volume_confirmed = bool(last['Volume'] > last['Vol_SMA20'])
+                close_price = float(last['Close'])
+                low_price = float(last['Low'])
+                
                 price_change_from_low = ((close_price - low_price) / low_price) * 100
                 not_overbought_today = price_change_from_low <= 4.5
 
-                st_buy_signal = (prev_1h['ST_Direction'] == -1) and (last_1h['ST_Direction'] == 1)
-                ema200_buy_ok = close_price > float(last_1h['EMA200'])
-                rsi_buy_ok = 40 <= float(last_1h['RSI']) <= 60
+                # Filtre Koşulları
+                st_buy_signal = (prev['ST_Direction'] == -1) and (last['ST_Direction'] == 1)
+                ema200_buy_ok = close_price > float(last['EMA200'])
+                rsi_buy_ok = 40 <= float(last['RSI']) <= 60
+                macd_buy_ok = float(last['MACD']) > float(last['MACD_Signal'])
 
-                if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and not_overbought_today:
+                if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and macd_buy_ok and not_overbought_today:
+                    signals_found += 1
                     entry_price = round(close_price, 2)
                     stop_loss = round(entry_price * 0.965, 2)
                     take_profit = round(entry_price * 1.07, 2)
+                    trailing_stop = round(entry_price * 0.98, 2) # İz Süren Stop başlangıç seviyesi
 
                     message = (
-                        f"🟢 *BİST - GÜVENLİ AL SİNYALİ*\n\n"
+                        f"🟢 *BİST 30M - GELİŞMİŞ AL SİNYALİ*\n\n"
                         f"📌 **Hisse:** `{ticker}`\n"
-                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
-                        f"🎯 **Satış/Hedef Fiyat (+%7):** `{take_profit} TL`\n"
-                        f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend + EMA200 Onaylı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
-                    )
-                    send_telegram_message(message)
-
-                st_sell_signal = (prev_1h['ST_Direction'] == 1) and (last_1h['ST_Direction'] == -1)
-                ema200_sell_ok = close_price < float(last_1h['EMA200'])
-                rsi_sell_ok = 32 <= float(last_1h['RSI']) <= 55
-
-                if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok:
-                    entry_price = round(close_price, 2)
-                    stop_loss = round(entry_price * 1.035, 2)
-                    take_profit = round(entry_price * 0.93, 2)
-
-                    message = (
-                        f"🔴 *BİST - GÜVENLİ SAT SİNYALİ*\n\n"
-                        f"📌 **Hisse:** `{ticker}`\n"
-                        f"💰 **Sinyal/Giriş Fiyatı:** `{entry_price} TL`\n"
-                        f"🎯 **Satış/Hedef Fiyat (-%7):** `{take_profit} TL`\n"
-                        f"🛑 **Stop-Loss (+%3.5):** `{stop_loss} TL`\n\n"
-                        f"📊 *Filtreler:* 1H Supertrend SAT + EMA200 Altı + Hacim + RSI ({round(float(last_1h['RSI']),1)})"
+                        f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
+                        f"🎯 **Hedef (+%7):** `{take_profit} TL`\n"
+                        f"🛑 **Stop-Loss (-%3.5):** `{stop_loss} TL`\n"
+                        f"📈 **İz Süren Stop (Start):** `{trailing_stop} TL`\n\n"
+                        f"🛡 **Destek:** `{support} TL` | ⚡ **Direnç:** `{resistance} TL`\n"
+                        f"📊 *Filtreler:* Supertrend + EMA200 + MACD + RSI ({round(float(last['RSI']),1)})"
                     )
                     send_telegram_message(message)
 
             except Exception:
                 pass
         
-        time.sleep(3600)
+        # Günlük Özet Raporu Gönderimi (Her döngü sonunda veya günde bir tetiklenebilir)
+        summary_msg = (
+            f"📊 *BİST BOT - PERİYODİK ÖZET RAPORU*\n\n"
+            f"🕒 Zaman: `{datetime.now().strftime('%d-%m-%Y %H:%M')}`\n"
+            f"🔍 Taranan Hisse Adedi: `{scanned_count}`\n"
+            f"🎯 Yakalanan Sinyal: `{signals_found}`\n"
+            f"Status: Sistem Stabil, 30M Tarama Devam Ediyor."
+        )
+        send_telegram_message(summary_msg)
+
+        # 30 Dakika Bekleme
+        time.sleep(1800)
 
 # ==================== Ana Çalıştırma ====================
 if __name__ == "__main__":
