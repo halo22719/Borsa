@@ -16,7 +16,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
         self.end_headers()
-        self.wfile.write(b"BIST Akilli Bot Calisiyor!")
+        self.wfile.write(b"BIST Gercek Zamanli Bot Calisiyor!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -131,16 +131,17 @@ def clean_data(df):
 # ==================== BİST TARAMA DÖNGÜSÜ ====================
 def scan_bist():
     while True:
-        print("--- BIST 30M Akilli ATR Taramasi Baslatiliyor ---")
+        print("--- BIST Canli Veri Taramasi Baslatiliyor ---")
         scanned_count = 0
         signals_found = 0
         
         for ticker in BIST_HISSELERI:
             try:
-                data_30m = yf.download(ticker, period="30d", interval="30m", progress=False)
+                # Canlı ve güncel veriyi en hızlı şekilde çekmek için period ve interval optimize edildi
+                data_30m = yf.download(ticker, period="10d", interval="30m", progress=False, threads=True)
                 data_30m = clean_data(data_30m)
                 
-                if data_30m.empty or len(data_30m) < 50 or 'Close' not in data_30m.columns:
+                if data_30m.empty or len(data_30m) < 30 or 'Close' not in data_30m.columns:
                     continue
 
                 scanned_count += 1
@@ -168,7 +169,7 @@ def scan_bist():
                 price_change_from_low = ((close_price - low_price) / low_price) * 100
                 not_overbought_today = price_change_from_low <= 4.5
 
-                # --- 🟢 AL SİNYALİ ŞARTLARI (Sertleştirilmiş RSI: 45 - 60) ---
+                # --- 🟢 AL SİNYALİ ŞARTLARI ---
                 st_buy_signal = (prev['ST_Direction'] == -1) and (last['ST_Direction'] == 1)
                 ema200_buy_ok = close_price > float(last['EMA200'])
                 rsi_buy_ok = 45 <= rsi_val <= 60
@@ -178,27 +179,24 @@ def scan_bist():
                     signals_found += 1
                     entry_price = round(close_price, 2)
                     
-                    # ATR Bazlı Akıllı Stop-Loss ve Hedef (Stop: 1.5 ATR, Hedef: 3.0 ATR)
                     stop_loss = round(entry_price - (1.5 * atr_val), 2)
                     take_profit = round(entry_price + (3.0 * atr_val), 2)
                     trailing_stop = round(entry_price - (1.0 * atr_val), 2)
 
                     message = (
-                        f"🟢 *BİST 30M - AKILLI ATR AL SİNYALİ*\n\n"
+                        f"🟢 *BİST CANLI - AL SİNYALİ*\n\n"
                         f"📌 **Hisse:** `{ticker}`\n"
                         f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
                         f"🎯 **ATR Hedef:** `{take_profit} TL`\n"
-                        f"🛑 **ATR Stop-Loss:** `{stop_loss} TL`\n"
-                        f"📈 **İz Süren Başlangıç:** `{trailing_stop} TL`\n\n"
+                        f"🛑 **ATR Stop-Loss:** `{stop_loss} TL`\n\n"
                         f"🛡 **Destek:** `{support} TL` | ⚡ **Direnç:** `{resistance} TL`\n"
                         f"📊 *Filtreler:* Supertrend + EMA200 + MACD + RSI ({round(rsi_val,1)})"
                     )
                     send_telegram_message(message)
 
-                # --- 🔴 SAT SİNYALİ ŞARTLARI (Sertleştirilmiş Dip Filtresi: RSI < 40 Engellendi!) ---
+                # --- 🔴 SAT SİNYALİ ŞARTLARI (Dip Filtreli) ---
                 st_sell_signal = (prev['ST_Direction'] == 1) and (last['ST_Direction'] == -1)
                 ema200_sell_ok = close_price < float(last['EMA200'])
-                # RSI 40'ın altındayken (aşırı satım/dip) SAT sinyali VERMEZ! Tepki alımı tuzağını önler.
                 rsi_sell_ok = 40 <= rsi_val <= 65
                 macd_sell_ok = float(last['MACD']) < float(last['MACD_Signal'])
 
@@ -206,35 +204,35 @@ def scan_bist():
                     signals_found += 1
                     entry_price = round(close_price, 2)
                     
-                    # ATR Bazlı Satış/Short Stop ve Hedefleri
                     stop_loss = round(entry_price + (1.5 * atr_val), 2)
                     take_profit = round(entry_price - (3.0 * atr_val), 2)
 
                     message = (
-                        f"🔴 *BİST 30M - AKILLI ATR SAT SİNYALİ*\n\n"
+                        f"🔴 *BİST CANLI - SAT SİNYALİ*\n\n"
                         f"📌 **Hisse:** `{ticker}`\n"
                         f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
                         f"🎯 **ATR Hedef (Düşüş):** `{take_profit} TL`\n"
                         f"🛑 **ATR Stop-Loss:** `{stop_loss} TL`\n\n"
                         f"🛡 **Destek:** `{support} TL` | ⚡ **Direnç:** `{resistance} TL`\n"
-                        f"📊 *Filtreler:* Supertrend SAT + EMA200 Altı + MACD + RSI ({round(rsi_val,1)}) [Dip Filtreli]"
+                        f"📊 *Filtreler:* Supertrend SAT + MACD + RSI ({round(rsi_val,1)}) [Dip Filtreli]"
                     )
                     send_telegram_message(message)
 
-            except Exception:
-                pass
+            except Exception as e:
+                # Anlık bağlantı hatası durumunda döngünün kopmaması için loglanıp geçilir
+                continue
         
-        # Periyodik Özet Raporu
+        # Özet Raporu
         summary_msg = (
-            f"📊 *BİST BOT - ATR ÖZET RAPORU*\n\n"
+            f"📊 *BİST BOT - CANLI TARAMA ÖZETİ*\n\n"
             f"🕒 Zaman: `{datetime.now().strftime('%d-%m-%Y %H:%M')}`\n"
             f"🔍 Taranan Hisse Adedi: `{scanned_count}`\n"
             f"🎯 Yakalanan Sinyal: `{signals_found}`\n"
-            f"Status: Akıllı ATR ve Sert RSI Filtreleri Devrede."
+            f"Status: Canlı Veri Akışı Aktif."
         )
         send_telegram_message(summary_msg)
 
-        # 30 Dakika Bekleme
+        # 30 Dakikalık Periyot Beklemesi
         time.sleep(1800)
 
 # ==================== Ana Çalıştırma ====================
