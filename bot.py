@@ -4,8 +4,9 @@ import logging
 import threading
 from datetime import datetime
 from http.server import HTTPServer, BaseHTTPRequestHandler
-import requests
+import numpy as np
 import pandas as pd
+import requests
 import yfinance as yf
 
 # Yahoo Finance gereksiz log/warning çıktılarını gizleme
@@ -17,7 +18,7 @@ class SimpleHTTPRequestHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "text/plain; charset=utf-8")
         self.end_headers()
-        self.wfile.write(b"BIST 100 Akilli Bot Calisiyor!")
+        self.wfile.write(b"BIST 100 1H Kelly & Monte Carlo Bot Calisiyor!")
 
     def do_HEAD(self):
         self.send_response(200)
@@ -39,6 +40,10 @@ def run_web_server():
 # ==================== Bot Ayarları ====================
 TELEGRAM_TOKEN = "8853048772:AAEW22ekJlDBc3EK9pWTiC8plZVm_9RBwas"
 CHAT_ID = "1131754179"
+
+TIMEFRAME = "1h"
+DATA_PERIOD = "60d"
+SCAN_INTERVAL_SEC = 3600  # 1 saat
 
 BIST_HISSELERI = [
     "AEFES.IS", "AGHOL.IS", "AHGAZ.IS", "AKBNK.IS", "AKCNS.IS", "AKFGY.IS", "AKFYE.IS", "AKSA.IS", "AKSEN.IS", "ALARK.IS",
@@ -67,63 +72,98 @@ def calculate_atr(df, period=14):
     low = df['Low']
     close = df['Close']
     tr1 = high - low
-    tr2 = abs(high - close.shift(1))
-    tr3 = abs(low - close.shift(1))
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
     tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
     return tr.ewm(alpha=1/period, adjust=False).mean()
 
-def calculate_supertrend(df, period=10, multiplier=3):
+def calculate_rsi(df, period=14):
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0.0).ewm(alpha=1/period, adjust=False).mean()
+    loss = (-delta.where(delta < 0, 0.0)).ewm(alpha=1/period, adjust=False).mean()
+    rs = gain / loss.replace(0, np.nan)
+    rsi = 100.0 - (100.0 / (1.0 + rs))
+    return rsi.fillna(50.0)
+
+def calculate_adx(df, period=14):
     high = df['High']
     low = df['Low']
     close = df['Close']
 
-    atr = calculate_atr(df, period=period)
-    hl2 = (high + low) / 2
-    basic_upperband = hl2 + (multiplier * atr)
-    basic_lowerband = hl2 - (multiplier * atr)
+    up_move = high.diff()
+    down_move = -low.diff()
 
-    final_upperband = basic_upperband.copy()
-    final_lowerband = basic_lowerband.copy()
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
 
-    for i in range(1, len(df)):
-        if basic_upperband.iloc[i] < final_upperband.iloc[i-1] or close.iloc[i-1] > final_upperband.iloc[i-1]:
-            final_upperband.iloc[i] = basic_upperband.iloc[i]
-        else:
-            final_upperband.iloc[i] = final_upperband.iloc[i-1]
+    tr1 = high - low
+    tr2 = (high - close.shift(1)).abs()
+    tr3 = (low - close.shift(1)).abs()
+    tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
 
-        if basic_lowerband.iloc[i] > final_lowerband.iloc[i-1] or close.iloc[i-1] < final_lowerband.iloc[i-1]:
-            final_lowerband.iloc[i] = basic_lowerband.iloc[i]
-        else:
-            final_lowerband.iloc[i] = final_lowerband.iloc[i-1]
+    atr = tr.ewm(alpha=1/period, adjust=False).mean().replace(0, np.nan)
+    plus_di = 100.0 * pd.Series(plus_dm, index=df.index).ewm(alpha=1/period, adjust=False).mean() / atr
+    minus_di = 100.0 * pd.Series(minus_dm, index=df.index).ewm(alpha=1/period, adjust=False).mean() / atr
 
-    supertrend = pd.Series(index=df.index, dtype='float64')
-    direction = pd.Series(1, index=df.index)
+    dx = 100.0 * (plus_di - minus_di).abs() / (plus_di + minus_di).replace(0, np.nan)
+    adx = dx.ewm(alpha=1/period, adjust=False).mean()
+    return adx.fillna(0.0)
 
-    for i in range(1, len(df)):
-        if close.iloc[i] > final_upperband.iloc[i-1]:
-            direction.iloc[i] = 1
-        elif close.iloc[i] < final_lowerband.iloc[i-1]:
-            direction.iloc[i] = -1
-        else:
-            direction.iloc[i] = direction.iloc[i-1]
+# ==================== Kelly Kriteri & Monte Carlo ====================
+def calculate_kelly_fraction(returns_series, lookback=120):
+    """
+    Son 'lookback' barlık getirilerden:
+    p = pozitif bar olasılığı
+    b = ortalama kazanç / ortalama kayıp
+    full_kelly = p - (1 - p) / b
+    half_kelly = max(0.0, min(0.25, full_kelly * 0.5))  # Güvenli üst sınır %25
+    """
+    recent = returns_series.dropna().tail(lookback)
+    if len(recent) < 20:
+        return 0.0, 0.0, 0.0
 
-        supertrend.iloc[i] = final_lowerband.iloc[i] if direction.iloc[i] == 1 else final_upperband.iloc[i]
+    wins = recent[recent > 0]
+    losses = recent[recent < 0].abs()
 
-    return supertrend, direction
+    if len(wins) == 0 or len(losses) == 0:
+        return 0.0, 0.0, 0.0
 
-def calculate_rsi(df, period=14):
-    delta = df['Close'].diff()
-    gain = (delta.where(delta > 0, 0)).ewm(alpha=1/period, adjust=False).mean()
-    loss = (-delta.where(delta < 0, 0)).ewm(alpha=1/period, adjust=False).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+    win_prob = float(len(wins) / len(recent))
+    avg_win = float(wins.mean())
+    avg_loss = float(losses.mean())
+    if avg_loss <= 0:
+        return 0.0, win_prob, 0.0
 
-def calculate_macd(df, fast=12, slow=26, signal=9):
-    exp1 = df['Close'].ewm(span=fast, adjust=False).mean()
-    exp2 = df['Close'].ewm(span=slow, adjust=False).mean()
-    macd_line = exp1 - exp2
-    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
-    return macd_line, signal_line
+    payoff_ratio = avg_win / avg_loss
+    full_kelly = win_prob - ((1.0 - win_prob) / payoff_ratio)
+    half_kelly = max(0.0, min(0.25, full_kelly * 0.5))
+    return round(half_kelly * 100, 2), round(win_prob * 100, 1), round(payoff_ratio, 2)
+
+def run_monte_carlo(returns_series, horizon_bars=20, num_sims=1000, seed=42):
+    """
+    Saatlik log/yüzde getirilerden Monte Carlo simülasyonu:
+    - horizon_bars: 20 saatlik (20 bar) ileri projeksiyon
+    - num_sims: 1000 simülasyon yolu
+    """
+    recent = returns_series.dropna().tail(200).to_numpy(dtype=float)
+    if len(recent) < 30:
+        return None
+
+    rng = np.random.default_rng(seed)
+    sampled = rng.choice(recent, size=(num_sims, horizon_bars), replace=True)
+    # Kümülatif getiri yolu: prod(1 + r) - 1
+    path_returns = np.prod(1.0 + sampled, axis=1) - 1.0
+
+    mean_ret_pct = float(np.mean(path_returns) * 100.0)
+    win_rate_pct = float(np.mean(path_returns > 0.0) * 100.0)
+    # %5 alt kuyruk -> %95 güven seviyesinde kötü senaryo (VaR)
+    var_95_pct = float(np.percentile(path_returns, 5) * 100.0)
+
+    return {
+        "mean_pct": round(mean_ret_pct, 2),
+        "win_pct": round(win_rate_pct, 1),
+        "var95_pct": round(var_95_pct, 2)
+    }
 
 def clean_data(df):
     if df is None or df.empty:
@@ -133,114 +173,137 @@ def clean_data(df):
     df = df.loc[:, ~df.columns.duplicated()]
     return df
 
-# ==================== BİST TARAMA DÖNGÜSÜ ====================
-def scan_bist():
+# ==================== BİST 1H TARAMA DÖNGÜSÜ ====================
+def scan_bist_1h():
     while True:
         try:
-            print("--- BIST 100 (30M) Taramasi Baslatiliyor ---", flush=True)
+            print("--- BIST 100 (1H) EMA50 + RSI14 + ADX14 Taramasi Baslatiliyor ---", flush=True)
             scanned_count = 0
             signals_found = 0
+            all_returns = []
+            kelly_scores = []
 
             for ticker in BIST_HISSELERI:
                 try:
-                    data_30m = yf.download(ticker, period="15d", interval="30m", progress=False, threads=False)
-                    data_30m = clean_data(data_30m)
+                    data_1h = yf.download(ticker, period=DATA_PERIOD, interval=TIMEFRAME, progress=False, threads=False)
+                    data_1h = clean_data(data_1h)
 
-                    if data_30m.empty or len(data_30m) < 50 or 'Close' not in data_30m.columns:
+                    if data_1h.empty or len(data_1h) < 60 or 'Close' not in data_1h.columns:
                         continue
 
                     scanned_count += 1
 
-                    data_30m['Supertrend'], data_30m['ST_Direction'] = calculate_supertrend(data_30m)
-                    data_30m['RSI'] = calculate_rsi(data_30m)
-                    data_30m['MACD'], data_30m['MACD_Signal'] = calculate_macd(data_30m)
-                    data_30m['ATR'] = calculate_atr(data_30m)
-                    data_30m['Vol_SMA20'] = data_30m['Volume'].rolling(window=20).mean()
-                    data_30m['EMA200'] = data_30m['Close'].ewm(span=200, adjust=False).mean()
+                    # İndikatörler: EMA 50 + RSI 14 + ADX 14 (+ ATR/Hacim/Destek-Direnç)
+                    data_1h['EMA50'] = data_1h['Close'].ewm(span=50, adjust=False).mean()
+                    data_1h['RSI14'] = calculate_rsi(data_1h, period=14)
+                    data_1h['ADX14'] = calculate_adx(data_1h, period=14)
+                    data_1h['ATR14'] = calculate_atr(data_1h, period=14)
+                    data_1h['Vol_SMA20'] = data_1h['Volume'].rolling(window=20).mean()
+                    data_1h['Ret'] = data_1h['Close'].pct_change()
 
-                    last = data_30m.iloc[-1]
-                    prev = data_30m.iloc[-2]
+                    all_returns.append(data_1h['Ret'].dropna().tail(150))
+
+                    last = data_1h.iloc[-1]
+                    prev = data_1h.iloc[-2]
 
                     close_price = float(last['Close'])
-                    low_price = float(last['Low'])
-                    atr_val = float(last['ATR'])
-                    rsi_val = float(last['RSI'])
+                    prev_close = float(prev['Close'])
+                    ema50_val = float(last['EMA50'])
+                    prev_ema50 = float(prev['EMA50'])
+                    rsi_val = float(last['RSI14'])
+                    adx_val = float(last['ADX14'])
+                    atr_val = float(last['ATR14'])
 
                     if close_price <= 0 or atr_val <= 0:
                         continue
 
-                    support = round(float(data_30m['Low'].tail(20).min()), 2)
-                    resistance = round(float(data_30m['High'].tail(20).max()), 2)
+                    kelly_pct, win_p, payoff_b = calculate_kelly_fraction(data_1h['Ret'])
+                    if kelly_pct > 0:
+                        kelly_scores.append((ticker, kelly_pct))
 
+                    support = round(float(data_1h['Low'].tail(20).min()), 2)
+                    resistance = round(float(data_1h['High'].tail(20).max()), 2)
                     volume_confirmed = bool(last['Volume'] > last['Vol_SMA20'])
-                    price_change_from_low = ((close_price - low_price) / low_price) * 100
-                    not_overbought_today = price_change_from_low <= 4.5
+                    adx_trend_ok = adx_val >= 20.0
 
-                    # --- 🟢 AL SİNYALİ ŞARTLARI ---
-                    st_buy_signal = (prev['ST_Direction'] == -1) and (last['ST_Direction'] == 1)
-                    ema200_buy_ok = close_price > float(last['EMA200'])
-                    rsi_buy_ok = 45 <= rsi_val <= 60
-                    macd_buy_ok = float(last['MACD']) > float(last['MACD_Signal'])
+                    # --- 🟢 1H AL SİNYALİ (EMA 50 + RSI 14 + ADX 14) ---
+                    ema50_cross_up = (prev_close <= prev_ema50) and (close_price > ema50_val)
+                    rsi_buy_ok = 45.0 <= rsi_val <= 65.0
 
-                    if st_buy_signal and volume_confirmed and ema200_buy_ok and rsi_buy_ok and macd_buy_ok and not_overbought_today:
+                    if ema50_cross_up and rsi_buy_ok and adx_trend_ok and volume_confirmed:
                         signals_found += 1
                         entry_price = round(close_price, 2)
                         sp = round(entry_price - (1.5 * atr_val), 2)
                         tp = round(entry_price + (3.0 * atr_val), 2)
-                        trailing_stop = round(entry_price - (1.0 * atr_val), 2)
 
                         message = (
-                            f"🟢 *BİST 30M - AL SİNYALİ*\n\n"
+                            f"🟢 *BİST 1H - AL SİNYALİ (EMA50 + RSI14 + ADX14)*\n\n"
                             f"📌 **Hisse:** `{ticker}`\n"
                             f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
-                            f"🎯 **TP (Hedef):** `{tp} TL`\n"
-                            f"🛑 **SP (Stop-Loss):** `{sp} TL`\n"
-                            f"📈 **İz Süren Başlangıç:** `{trailing_stop} TL`\n\n"
+                            f"🎯 **TP (Hedef):** `{tp} TL` | 🛑 **SP:** `{sp} TL`\n"
                             f"🛡 **Destek:** `{support} TL` | ⚡ **Direnç:** `{resistance} TL`\n"
-                            f"📊 *Filtreler:* Supertrend + EMA200 + MACD + RSI (`{round(rsi_val, 1)}`)"
+                            f"📐 **EMA50:** `{round(ema50_val, 2)}` | **RSI14:** `{round(rsi_val, 1)}` | **ADX14:** `{round(adx_val, 1)}`\n"
+                            f"🎲 **Yarım-Kelly:** `%{kelly_pct}` *(Win: %{win_p}, R/R: {payoff_b})*"
                         )
                         send_telegram_message(message)
 
-                    # --- 🔴 SAT SİNYALİ ŞARTLARI (Dip Filtreli: RSI >= 40) ---
-                    st_sell_signal = (prev['ST_Direction'] == 1) and (last['ST_Direction'] == -1)
-                    ema200_sell_ok = close_price < float(last['EMA200'])
-                    rsi_sell_ok = 40 <= rsi_val <= 65
-                    macd_sell_ok = float(last['MACD']) < float(last['MACD_Signal'])
+                    # --- 🔴 1H SAT SİNYALİ (EMA 50 + RSI 14 + ADX 14) ---
+                    ema50_cross_down = (prev_close >= prev_ema50) and (close_price < ema50_val)
+                    rsi_sell_ok = 35.0 <= rsi_val <= 55.0
 
-                    if st_sell_signal and volume_confirmed and ema200_sell_ok and rsi_sell_ok and macd_sell_ok:
+                    if ema50_cross_down and rsi_sell_ok and adx_trend_ok and volume_confirmed:
                         signals_found += 1
                         entry_price = round(close_price, 2)
                         sp = round(entry_price + (1.5 * atr_val), 2)
                         tp = round(entry_price - (3.0 * atr_val), 2)
 
                         message = (
-                            f"🔴 *BİST 30M - SAT SİNYALİ*\n\n"
+                            f"🔴 *BİST 1H - SAT SİNYALİ (EMA50 + RSI14 + ADX14)*\n\n"
                             f"📌 **Hisse:** `{ticker}`\n"
                             f"💰 **Giriş Fiyatı:** `{entry_price} TL`\n"
-                            f"🎯 **TP (Hedef):** `{tp} TL`\n"
-                            f"🛑 **SP (Stop-Loss):** `{sp} TL`\n\n"
+                            f"🎯 **TP (Hedef):** `{tp} TL` | 🛑 **SP:** `{sp} TL`\n"
                             f"🛡 **Destek:** `{support} TL` | ⚡ **Direnç:** `{resistance} TL`\n"
-                            f"📊 *Filtreler:* Supertrend SAT + EMA200 Altı + MACD + RSI (`{round(rsi_val, 1)}`)"
+                            f"📐 **EMA50:** `{round(ema50_val, 2)}` | **RSI14:** `{round(rsi_val, 1)}` | **ADX14:** `{round(adx_val, 1)}`\n"
+                            f"🎲 **Yarım-Kelly:** `%{kelly_pct}` *(Win: %{win_p}, R/R: {payoff_b})*"
                         )
                         send_telegram_message(message)
 
                 except Exception:
                     continue
 
+            # Genel Piyasa Monte Carlo & Kelly Özeti
+            mc_text = "Veri yetersiz"
+            avg_kelly_text = "%0.0"
+            if all_returns:
+                combined_ret = pd.concat(all_returns, ignore_index=True)
+                mc = run_monte_carlo(combined_ret, horizon_bars=20, num_sims=1000)
+                if mc:
+                    mc_text = (
+                        f"Ort. 20s Getiri: `%{mc['mean_pct']}` | "
+                        f"Pozitif İhtimal: `%{mc['win_pct']}` | "
+                        f"%95 VaR: `%{mc['var95_pct']}`"
+                    )
+            if kelly_scores:
+                avg_k = round(float(np.mean([k[1] for k in kelly_scores])), 2)
+                top_k = sorted(kelly_scores, key=lambda x: x[1], reverse=True)[:3]
+                top_str = ", ".join([f"{t.replace('.IS','')} (%{v})" for t, v in top_k])
+                avg_kelly_text = f"Ort. Yarım-Kelly: `%{avg_k}` | En Yüksek: `{top_str}`"
+
             summary_msg = (
-                f"📊 *BİST 100 ÖZET RAPORU (30M)*\n\n"
+                f"📊 *BİST 100 ÖZET RAPORU (1H)*\n\n"
                 f"🕒 Zaman: `{datetime.now().strftime('%d-%m-%Y %H:%M')}`\n"
-                f"🔍 Taranan Hisse Adedi: `{scanned_count}`\n"
-                f"🎯 Yakalanan Sinyal: `{signals_found}`\n"
-                f"Status: Sadece BİST 100 Tarama Aktif."
+                f"🔍 Taranan Hisse: `{scanned_count}` | 🎯 Sinyal: `{signals_found}`\n"
+                f"📈 *Filtreler:* `EMA 50 + RSI 14 + ADX 14 (>=20)`\n"
+                f"🎲 *Kelly:* {avg_kelly_text}\n"
+                f"🎰 *Monte Carlo (1000x20s):* {mc_text}"
             )
             send_telegram_message(summary_msg)
         except Exception as e:
             print(f"Tarama dongusu hatasi: {e}", flush=True)
 
-        time.sleep(1800)
+        time.sleep(SCAN_INTERVAL_SEC)
 
 # ==================== Ana Çalıştırma ====================
 if __name__ == "__main__":
-    threading.Thread(target=scan_bist, daemon=True).start()
+    threading.Thread(target=scan_bist_1h, daemon=True).start()
     run_web_server()
